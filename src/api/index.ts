@@ -1,25 +1,23 @@
 import request from '../utils/request';
 
-// ¶¨ÒåµÇÂ¼²ÎÊı½Ó¿Ú
+// å®šä¹‰ç™»å½•å‚æ•°æ¥å£
 interface LoginParams {
     userName: string;
     userPwd: string;
 }
 
-// ¶¨ÒåtokenÏìÓ¦½Ó¿Ú
+// å®šä¹‰tokenå“åº”æ¥å£ï¼ˆåç«¯å®é™…è¿”å›æ ¼å¼ï¼‰
 interface TokenResponse {
-    json_ok: boolean;
-    json_msg: string;
-    data: {
-        accessToken: string;
-        [key: string]: any;
-    };
+    code: number;         // çŠ¶æ€ç ï¼Œ200è¡¨ç¤ºæˆåŠŸï¼Œ500è¡¨ç¤ºé”™è¯¯
+    msg: string;          // è¿”å›æ¶ˆæ¯
+    data: string;         // tokenå­—ç¬¦ä¸²ï¼ˆæ³¨æ„ï¼šdata ç›´æ¥å°±æ˜¯ tokenï¼Œä¸æ˜¯å¯¹è±¡ï¼‰
+    trackId?: string;     // è¿½è¸ªIDï¼ˆå¯é€‰ï¼‰
 }
 
 /**
- * »ñÈ¡token½Ó¿Ú
- * @param params µÇÂ¼²ÎÊı£¬°üº¬userNameºÍuserPwd
- * @returns Promise<TokenResponse> ·µ»ØtokenÊı¾İ
+ * è·å–tokenæ¥å£
+ * @param params ç™»å½•å‚æ•°ï¼ŒåŒ…å«userNameå’ŒuserPwd
+ * @returns Promise<TokenResponse> è¿”å›tokenæ•°æ®
  */
 export const getToken = (params: LoginParams): Promise<TokenResponse> => {
     return request({
@@ -29,27 +27,27 @@ export const getToken = (params: LoginParams): Promise<TokenResponse> => {
     });
 };
 
-// ¶¨ÒåÕËºÅµÇÂ¼²ÎÊı½Ó¿Ú£¨³£¼û¸ñÊ½£©
+// å®šä¹‰è´¦å·ç™»å½•å‚æ•°æ¥å£ï¼ˆåç«¯è¦æ±‚çš„æ ¼å¼ï¼‰
 interface LoginByAccountParams {
-    account: string;      // ÕËºÅ
-    password: string;     // ÃÜÂë
+    user: string;         // ç”¨æˆ·è´¦å·ï¼ˆåç«¯è¦æ±‚çš„å‚æ•°åæ˜¯ userï¼Œä¸æ˜¯ accountï¼‰
+    password: string;     // å¯†ç 
 }
 
 /**
- * ÕËºÅµÇÂ¼½Ó¿Ú
- * @param params µÇÂ¼²ÎÊı£¬°üº¬accountºÍpassword
- * @returns Promise<TokenResponse> ·µ»ØtokenÊı¾İ
+ * è´¦å·ç™»å½•æ¥å£
+ * @param params ç™»å½•å‚æ•°ï¼ŒåŒ…å«accountå’Œpassword
+ * @returns Promise<TokenResponse> è¿”å›tokenæ•°æ®
  * @description 
- * ·½Ê½1£ºÅäÖÃ .env.development ÖĞµÄ VITE_API_BASE_URL£¬Ê¹ÓÃÏà¶ÔÂ·¾¶ '/user/loginByAccount'
- * ·½Ê½2£ºÖ±½ÓÔÚÕâÀïÊ¹ÓÃÍêÕûURLÌæ»» url ×Ö¶Î
- * ÀıÈç£ºurl: 'https://api.example.com/user/loginByAccount'
+ * æ–¹å¼1ï¼šé…ç½® .env.development ä¸­çš„ VITE_API_BASE_URLï¼Œä½¿ç”¨ç›¸å¯¹è·¯å¾„ '/user/loginByAccount'
+ * æ–¹å¼2ï¼šç›´æ¥åœ¨è¿™é‡Œä½¿ç”¨å®Œæ•´URLæ›¿æ¢ url å­—æ®µ
+ * ä¾‹å¦‚ï¼šurl: 'https://api.example.com/user/loginByAccount'
  */
 export const loginByAccount = (params: LoginByAccountParams): Promise<TokenResponse> => {
-    // Èç¹ûÓĞ»·¾³±äÁ¿ÅäÖÃµÄbaseURL£¬Ê¹ÓÃÏà¶ÔÂ·¾¶
-    // ·ñÔòĞèÒªÔÚÕâÀïÅäÖÃÍêÕûµÄAPIµØÖ·
+    // å¦‚æœæœ‰ç¯å¢ƒå˜é‡é…ç½®çš„baseURLï¼Œä½¿ç”¨ç›¸å¯¹è·¯å¾„
+    // å¦åˆ™éœ€è¦åœ¨è¿™é‡Œé…ç½®å®Œæ•´çš„APIåœ°å€
     const apiUrl = import.meta.env.VITE_API_BASE_URL 
-        ? '/user/loginByAccount'  // Ïà¶ÔÂ·¾¶£¬»áÆ´½ÓbaseURL
-        : 'https://culture.xianzanwl.com/dm/user/loginByAccount';  // ÍêÕûURL
+        ? '/user/loginByAccount'  // ç›¸å¯¹è·¯å¾„ï¼Œä¼šæ‹¼æ¥baseURL
+        : 'https://culture.xianzanwl.com/dm/user/loginByAccount';  // å®Œæ•´URL
     
     return request({
         url: apiUrl,

@@ -179,16 +179,32 @@ const handleLogin = async () => {
     loginForm.value.validate(async (valid: boolean) => {
         if (valid) {
             try {
-                // 调用账号登录API
-                const response = await loginByAccount({
-                    account: loginParam.username,
-                    password: loginParam.password
+                // 调用 getToken 接口（参数名：username 和 userPwd）
+                const response = await getToken({
+                    userName: loginParam.username,   // 注意：参数名是 userName（驼峰命名）
+                    userPwd: loginParam.password     // 注意：参数名是 userPwd
                 });
                 
-                // 检查响应是否成功
-                if (response.json_ok) {
-                    // 保存token到localStorage
-                    const accessToken = response.data.accessToken;
+                // 【调试日志】打印完整的响应数据结构
+                console.log('=== 登录API完整响应 ===');
+                console.log('完整响应对象:', response);
+                console.log('response.code:', response.code);
+                console.log('response.msg:', response.msg);
+                console.log('response.data (token):', response.data);
+                console.log('=====================');
+                
+                // 检查响应是否成功（后端返回 code: 200 表示成功）
+                if (response.code === 200) {
+                    // 保存token到localStorage（注意：data 直接就是 token 字符串）
+                    const accessToken = response.data;
+                    
+                    // 验证 token 是否存在
+                    if (!accessToken || typeof accessToken !== 'string') {
+                        ElMessage.error('登录失败：未获取到访问令牌');
+                        console.error('Token 为空或类型错误，完整响应:', response);
+                        return;
+                    }
+                    
                     localStorage.setItem('accessToken', accessToken);
                     localStorage.setItem('vuems_name', loginParam.username);
                     
@@ -206,8 +222,8 @@ const handleLogin = async () => {
                     ElMessage.success('登录成功');
                     router.push('/');
                 } else {
-                    // 登录失败，显示服务器返回的错误信息
-                    ElMessage.error(response.json_msg || '登录失败');
+                    // 登录失败，显示服务器返回的错误信息（使用 msg 字段）
+                    ElMessage.error(response.msg || '登录失败');
                 }
             } catch (error: any) {
                 // 请求失败处理（错误提示已在request.ts中统一处理）
