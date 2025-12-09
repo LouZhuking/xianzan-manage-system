@@ -40,7 +40,7 @@
                             </el-form-item>
                             <!-- 记住密码和忘记密码 -->
                             <div class="password-options">
-                                <el-checkbox v-model="rememberPassword" label="记住密码" />
+                                <el-checkbox v-model="rememberPassword" label="记住用户名" />
                             </div>
                             <el-button class="submit-btn" type="primary" size="large" @click="handleLogin">登录</el-button>
                             <!-- Tips提示 -->
@@ -106,18 +106,23 @@ const tabs = useTabsStore();
 // 当前激活的标签页
 const activeTab = ref('password');
 
-// 从localStorage读取记住的登录信息
-const savedLoginParam = localStorage.getItem('login-param');
-const savedParam = savedLoginParam ? JSON.parse(savedLoginParam) : null;
+// 从localStorage读取记住的用户名（安全考虑：不再存储密码）
+const savedUsername = localStorage.getItem('login-username');
 
-// 记住密码状态
-const rememberPassword = ref(!!savedParam);
+// 【安全清理】一次性清除旧的不安全存储数据（包含明文密码的login-param）
+if (localStorage.getItem('login-param')) {
+    localStorage.removeItem('login-param');
+    console.log('已清理旧的不安全登录数据');
+}
+
+// 记住用户名状态
+const rememberPassword = ref(!!savedUsername);
 
 // 账号密码登录表单
 const loginForm = ref<FormInstance>();
 const loginParam = reactive<LoginInfo>({
-    username: savedParam ? savedParam.username : '',
-    password: savedParam ? savedParam.password : '',
+    username: savedUsername || '',
+    password: '', // 安全修复：密码不再从localStorage恢复
 });
 
 // 账号密码登录验证规则
@@ -212,11 +217,11 @@ const handleLogin = async () => {
                     const keys = permiss.defaultList[loginParam.username === 'admin' ? 'admin' : 'user'];
                     permiss.handleSet(keys);
                     
-                    // 记住密码处理
+                    // 记住用户名处理（安全修复：只保存用户名，不保存密码）
                     if (rememberPassword.value) {
-                        localStorage.setItem('login-param', JSON.stringify(loginParam));
+                        localStorage.setItem('login-username', loginParam.username);
                     } else {
-                        localStorage.removeItem('login-param');
+                        localStorage.removeItem('login-username');
                     }
                     
                     ElMessage.success('登录成功');
