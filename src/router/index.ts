@@ -24,6 +24,33 @@ const routes: RouteRecordRaw[] = [
                 component: () => import(/* webpackChunkName: "dashboard" */ '../views/dashboard.vue'),
             },
             {
+                path: '/device-manage',
+                name: 'device-manage',
+                meta: {
+                    title: '设备管理',
+                    noAuth: true,
+                },
+                component: () => import(/* webpackChunkName: "device-manage" */ '../views/business/device-manage.vue'),
+            },
+            {
+                path: '/revenue-flow',
+                name: 'revenue-flow',
+                meta: {
+                    title: '营收流水',
+                    noAuth: true,
+                },
+                component: () => import(/* webpackChunkName: "revenue-flow" */ '../views/business/revenue-flow.vue'),
+            },
+            {
+                path: '/order-system',
+                name: 'order-system',
+                meta: {
+                    title: '订单系统',
+                    noAuth: true,
+                },
+                component: () => import(/* webpackChunkName: "order-system" */ '../views/business/order-system.vue'),
+            },
+            {
                 path: '/system-user',
                 name: 'system-user',
                 meta: {

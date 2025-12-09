@@ -12,6 +12,17 @@
                     <Fold />
                 </el-icon>
             </div>
+            <!-- 横向导航栏 -->
+            <div class="nav-tabs">
+                <div 
+                    v-for="item in navTabs" 
+                    :key="item.path"
+                    :class="['nav-tab-item', { 'active': isActive(item.path) }]"
+                    @click="handleNavClick(item.path)"
+                >
+                    {{ item.title }}
+                </div>
+            </div>
         </div>
         <div class="header-right">
             <div class="header-user-con">
@@ -65,8 +76,20 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { useSidebarStore } from '../store/sidebar';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import imgurl from '../assets/img/img.jpg';
+
+// 导航栏数据定义
+interface NavTab {
+    path: string;
+    title: string;
+}
+
+const navTabs: NavTab[] = [
+    { path: '/device-manage', title: '设备管理' },
+    { path: '/revenue-flow', title: '营收流水' },
+    { path: '/order-system', title: '订单系统' },
+];
 
 const username: string | null = localStorage.getItem('vuems_name');
 const message: number = 2;
@@ -85,6 +108,17 @@ onMounted(() => {
 
 // 用户名下拉菜单选择事件
 const router = useRouter();
+const route = useRoute();
+
+// 导航栏点击事件
+const handleNavClick = (path: string) => {
+    router.push(path);
+};
+
+// 判断当前导航是否激活
+const isActive = (path: string) => {
+    return route.path === path;
+};
 const handleCommand = (command: string) => {
     if (command == 'loginout') {
         localStorage.removeItem('vuems_name');
@@ -120,6 +154,7 @@ const setFullScreen = () => {
     align-items: center;
     padding-left: 20px;
     height: 100%;
+    flex: 1;
 }
 
 .logo {
@@ -200,5 +235,46 @@ const setFullScreen = () => {
 
 .el-dropdown-menu__item {
     text-align: center;
+}
+
+/* 横向导航栏样式 */
+.nav-tabs {
+    display: flex;
+    align-items: center;
+    margin-left: 40px;
+    height: 100%;
+}
+
+.nav-tab-item {
+    position: relative;
+    padding: 0 24px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 15px;
+    color: var(--header-text-color);
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.nav-tab-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.nav-tab-item.active {
+    background-color: #d4a76a;
+    color: #2c3e50;
+    font-weight: 500;
+}
+
+.nav-tab-item.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: #d4a76a;
 }
 </style>

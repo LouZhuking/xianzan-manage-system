@@ -109,12 +109,6 @@ const activeTab = ref('password');
 // 从localStorage读取记住的用户名（安全考虑：不再存储密码）
 const savedUsername = localStorage.getItem('login-username');
 
-// 【安全清理】一次性清除旧的不安全存储数据（包含明文密码的login-param）
-if (localStorage.getItem('login-param')) {
-    localStorage.removeItem('login-param');
-    console.log('已清理旧的不安全登录数据');
-}
-
 // 记住用户名状态
 const rememberPassword = ref(!!savedUsername);
 
