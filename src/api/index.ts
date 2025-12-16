@@ -29,29 +29,43 @@ export const getToken = (params: LoginParams): Promise<TokenResponse> => {
 
 // 定义账号登录参数接口（后端要求的格式）
 interface LoginByAccountParams {
-    user: string;         // 用户账号（后端要求的参数名是 user，不是 account）
-    password: string;     // 密码
+    user: string;         // 用户账号
+    userPwd: string;      // 密码
+}
+
+// 定义登录响应接口
+interface LoginResponse {
+    code: number;
+    msg: string;
+    data: {
+        userInfo: {
+            id: number;
+            user: string;
+            userPwd: string;
+            userName: string;
+            roleId: number;
+            dealerId: number;
+            createOn: number;
+        };
+    };
 }
 
 /**
  * 账号登录接口
- * @param params 登录参数，包含account和password
- * @returns Promise<TokenResponse> 返回token数据
+ * @param params 登录参数，包含user和userPwd
+ * @param token 从getToken获取的token
+ * @returns Promise<LoginResponse> 返回用户信息
  * @description 
- * 方式1：配置 .env.development 中的 VITE_API_BASE_URL，使用相对路径 '/user/loginByAccount'
- * 方式2：直接在这里使用完整URL替换 url 字段
- * 例如：url: 'https://api.example.com/user/loginByAccount'
+ * 需要先调用 getToken 获取 token，然后在 header 中携带 token 调用此接口
+ * 参数通过 Query 方式传递
  */
-export const loginByAccount = (params: LoginByAccountParams): Promise<TokenResponse> => {
-    // 如果有环境变量配置的baseURL，使用相对路径
-    // 否则需要在这里配置完整的API地址
-    const apiUrl = import.meta.env.VITE_API_BASE_URL 
-        ? '/user/loginByAccount'  // 相对路径，会拼接baseURL
-        : 'https://culture.xianzanwl.com/dm/user/loginByAccount';  // 完整URL
-    
+export const loginByAccount = (params: LoginByAccountParams, token: string): Promise<LoginResponse> => {
     return request({
-        url: apiUrl,
+        url: 'https://culture.xianzanwl.com/dm/user/loginByAccount',
         method: 'post',
-        data: params
+        params: params,  // 使用 params 作为 Query 参数
+        headers: {
+            'token': token
+        }
     });
 };

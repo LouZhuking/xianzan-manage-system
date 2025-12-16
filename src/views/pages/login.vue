@@ -102,6 +102,8 @@ interface PhoneInfo {
 const router = useRouter();
 const permiss = usePermissStore();
 const tabs = useTabsStore();
+import { useSidebarStore } from '@/store/sidebar';
+const sidebarStore = useSidebarStore();
 
 // 当前激活的标签页
 const activeTab = ref('password');
@@ -178,40 +180,78 @@ const handleLogin = async () => {
     loginForm.value.validate(async (valid: boolean) => {
         if (valid) {
             try {
-                // 调用 getToken 接口（参数名：username 和 userPwd）
-                const response = await getToken({
-                    userName: loginParam.username,   // 注意：参数名是 userName（驼峰命名）
-                    userPwd: loginParam.password     // 注意：参数名是 userPwd
+                // 第一步：使用固定账号获取 token
+                console.log('=== 第一步：获取Token ===');
+                const tokenResponse = await getToken({
+                    userName: 'dm13918177314',
+                    userPwd: 'a13918177314'
                 });
                 
-                // 【调试日志】打印完整的响应数据结构
-                console.log('=== 登录API完整响应 ===');
-                console.log('完整响应对象:', response);
-                console.log('response.code:', response.code);
-                console.log('response.msg:', response.msg);
-                console.log('response.data (token):', response.data);
-                console.log('=====================');
+                console.log('Token响应:', tokenResponse);
                 
-                // 检查响应是否成功（后端返回 code: 200 表示成功）
-                if (response.code === 200) {
-                    // 保存token到localStorage（注意：data 直接就是 token 字符串）
-                    const accessToken = response.data;
-                    
-                    // 验证 token 是否存在
-                    if (!accessToken || typeof accessToken !== 'string') {
-                        ElMessage.error('登录失败：未获取到访问令牌');
-                        console.error('Token 为空或类型错误，完整响应:', response);
-                        return;
-                    }
-                    
+                if (tokenResponse.code !== 200 || !tokenResponse.data) {
+                    ElMessage.error(tokenResponse.msg || '获取Token失败');
+                    return;
+                }
+                
+                const accessToken = tokenResponse.data;
+                console.log('获取到Token:', accessToken);
+                
+                // 第二步：使用 token 调用登录接口
+                console.log('=== 第二步：调用登录接口 ===');
+                const loginResponse = await loginByAccount({
+                    user: loginParam.username,
+                    userPwd: loginParam.password
+                }, accessToken);
+                
+                console.log('登录响应:', loginResponse);
+                
+                if (loginResponse.code === 200) {
+                    // 保存token和用户信息
                     localStorage.setItem('accessToken', accessToken);
                     localStorage.setItem('vuems_name', loginParam.username);
                     
-                    // 设置权限
-                    const keys = permiss.defaultList[loginParam.username === 'admin' ? 'admin' : 'user'];
-                    permiss.handleSet(keys);
+                    // 根据后端返回的 roleId 设置权限和角色
+                    // roleId = 1 → 管理员, roleId = 2 → 经销商
+                    const userInfo = loginResponse.data?.userInfo;
+                    const roleId = userInfo?.roleId;
                     
-                    // 记住用户名处理（安全修复：只保存用户名，不保存密码）
+                    let userRole: 'admin' | 'supplier' | 'user' = 'user';
+                    if (roleId === 1) {
+                        userRole = 'admin';
+                    } else if (roleId === 2) {
+                        userRole = 'supplier';
+                    }
+                    
+                    console.log('用户角色:', userRole, 'roleId:', roleId);
+                    
+                    const keys = permiss.defaultList[userRole];
+                    permiss.handleSet(keys);
+                    permiss.setRole(userRole);
+                    
+                    // 如果是经销商，设置经销商信息
+                    if (userRole === 'supplier') {
+                        sidebarStore.setCurrentSupplierInfo({
+                            id: userInfo?.user || loginParam.username,
+                            name: userInfo?.userName || '经销商',
+                            badge: '9',
+                            devices: [
+                                { id: 'WOA00001', name: 'WOA00001', status: 'online' },
+                                { id: 'WOA00002', name: 'WOA00002', status: 'online' },
+                                { id: 'WOA00003', name: 'WOA00003', status: 'offline' },
+                                { id: 'WOA00004', name: 'WOA00004', status: 'online' },
+                                { id: 'WOA00005', name: 'WOA00005', status: 'fault' },
+                                { id: 'WOA00006', name: 'WOA00006', status: 'online' },
+                                { id: 'WOA00007', name: 'WOA00007', status: 'online' },
+                                { id: 'WOA00008', name: 'WOA00008', status: 'offline' },
+                                { id: 'WOA00009', name: 'WOA00009', status: 'online' },
+                            ]
+                        });
+                    } else {
+                        sidebarStore.clearSupplierInfo();
+                    }
+                    
+                    // 记住用户名处理
                     if (rememberPassword.value) {
                         localStorage.setItem('login-username', loginParam.username);
                     } else {
@@ -221,13 +261,10 @@ const handleLogin = async () => {
                     ElMessage.success('登录成功');
                     router.push('/');
                 } else {
-                    // 登录失败，显示服务器返回的错误信息（使用 msg 字段）
-                    ElMessage.error(response.msg || '登录失败');
+                    ElMessage.error(loginResponse.msg || '登录失败');
                 }
             } catch (error: any) {
-                // 请求失败处理（错误提示已在request.ts中统一处理）
                 console.error('登录错误:', error);
-                // 不需要再次显示错误提示，request.ts拦截器已经处理
             }
         } else {
             ElMessage.error('请检查输入信息');
