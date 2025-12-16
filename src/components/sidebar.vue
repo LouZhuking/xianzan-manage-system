@@ -27,8 +27,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Document } from '@element-plus/icons-vue';
+import { useSidebarStore } from '@/store/sidebar';
+
+const sidebarStore = useSidebarStore();
 
 // 供应商列表假数据
 const supplierList = ref([
@@ -49,12 +52,12 @@ const supplierList = ref([
     { name: '供应商14号', badge: null },
 ]);
 
-// 当前选中的供应商索引（默认不选中任何项）
-const activeIndex = ref<number | null>(null);
+// 当前选中的供应商索引（从store获取）
+const activeIndex = computed(() => sidebarStore.activeSupplier?.index ?? null);
 
 // 处理点击事件
 const handleItemClick = (index: number) => {
-    activeIndex.value = index;
+    sidebarStore.setActiveSupplier(index, supplierList.value[index].name);
 };
 </script>
 
@@ -62,7 +65,7 @@ const handleItemClick = (index: number) => {
 .sidebar {
     display: block;
     position: relative;
-    width: 250px;
+    width: 200px;
     height: calc(100vh - 70px);
     background-color: #fff;
     overflow-y: auto;

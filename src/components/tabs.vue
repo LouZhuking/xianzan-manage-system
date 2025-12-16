@@ -1,148 +1,97 @@
 <template>
-    <div class="tabs-container">
-        <el-tabs v-model="activePath" class="tabs" type="card" closable @tab-click="clickTabls" @tab-remove="closeTabs">
-            <el-tab-pane
-                v-for="item in tabs.list"
-                :key="item.path"
-                :label="item.title"
-                :name="item.path"
-                @click="setTags(item)"
-            ></el-tab-pane>
-        </el-tabs>
-        <div class="Tabs-close-box">
-            <el-dropdown @command="handleTags">
-                <el-button size="small" type="primary" plain>
-                    标签选项
-                    <el-icon class="el-icon--right">
-                        <arrow-down />
-                    </el-icon>
-                </el-button>
-                <template #dropdown>
-                    <el-dropdown-menu size="small">
-                        <el-dropdown-item command="other">关闭其他</el-dropdown-item>
-                        <el-dropdown-item command="current">关闭当前</el-dropdown-item>
-                        <el-dropdown-item command="all">关闭所有</el-dropdown-item>
-                    </el-dropdown-menu>
-                </template>
-            </el-dropdown>
+    <div class="breadcrumb-container">
+        <div class="breadcrumb-left">
+            <span class="breadcrumb-label">您当前的位置：</span>
+            <el-breadcrumb separator="/">
+                <el-breadcrumb-item 
+                    v-for="(item, index) in breadcrumbList" 
+                    :key="index"
+                    :to="index < breadcrumbList.length - 1 ? item.path : ''"
+                >
+                    {{ item.title }}{{ activeSupplierName ? ' / ' + activeSupplierName : '' }}
+                </el-breadcrumb-item>
+            </el-breadcrumb>
+        </div>
+        <div class="breadcrumb-right">
+            <el-input
+                v-model="searchValue"
+                placeholder="搜索供应商名称..."
+                :prefix-icon="Search"
+                clearable
+                @input="handleSearch"
+            />
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { useTabsStore } from '../store/tabs';
-import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
+import { ref, computed } from 'vue';
+import { useRoute } from 'vue-router';
+import { Search } from '@element-plus/icons-vue';
+import { useSidebarStore } from '@/store/sidebar';
 
 const route = useRoute();
-const router = useRouter();
-const activePath = ref(route.fullPath);
-const tabs = useTabsStore();
-// 设置标签
-const setTags = (route: any) => {
-    const isExist = tabs.list.some((item) => {
-        return item.path === route.fullPath;
-    });
-    if (!isExist) {
-        tabs.setTabsItem({
-            name: route.name,
-            title: route.meta.title,
-            path: route.fullPath,
-        });
-    }
-};
-setTags(route);
-onBeforeRouteUpdate((to) => {
-    setTags(to);
+const sidebarStore = useSidebarStore();
+const searchValue = ref('');
+
+// 面包屑列表
+const breadcrumbList = computed(() => {
+    const matched = route.matched.filter((item) => item.meta && item.meta.title);
+    return matched.map((item) => ({
+        title: item.meta.title as string,
+        path: item.path,
+    }));
 });
 
-// 关闭全部标签
-const closeAll = () => {
-    tabs.clearTabs();
-    router.push('/');
-};
-// 关闭其他标签
-const closeOther = () => {
-    const curItem = tabs.list.filter((item) => {
-        return item.path === route.fullPath;
-    });
-    tabs.closeTabsOther(curItem);
-};
-const handleTags = (command: string) => {
-    switch (command) {
-        case 'current':
-            // 关闭当前页面的标签页
-            tabs.closeCurrentTag({
-                $router: router,
-                $route: route,
-            });
-            break;
-        case 'all':
-            closeAll();
-            break;
+// 当前选中的供应商名称
+const activeSupplierName = computed(() => sidebarStore.activeSupplier?.name || '');
 
-        case 'other':
-            closeOther();
-            break;
-    }
+// 搜索事件
+const emit = defineEmits(['search']);
+const handleSearch = (value: string) => {
+    emit('search', value);
 };
-
-const clickTabls = (item: any) => {
-    router.push(item.props.name);
-};
-const closeTabs = (path: string) => {
-    const index = tabs.list.findIndex((item) => item.path === path);
-    tabs.delTabsItem(index);
-    const item = tabs.list[index] || tabs.list[index - 1];
-    router.push(item ? item.path : '/');
-};
-
-watch(
-    () => route.fullPath,
-    (newVal, oldVal) => {
-        activePath.value = newVal;
-    }
-);
 </script>
 
-<style scss>
-.tabs-container {
-    position: relative;
-    overflow: hidden;
+<style scoped>
+.breadcrumb-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
     background: #fff;
-    padding: 2px 120px 0 0;
+    border-bottom: 1px solid #ebeef5;
 }
 
-.tabs {
-    .el-tabs__header {
-        margin-bottom: 0;
-    }
+.breadcrumb-left {
+    display: flex;
+    align-items: center;
+}
 
-    .el-tabs__nav {
-        height: 28px;
-    }
+.breadcrumb-label {
+    font-size: 14px;
+    color: #606266;
+    margin-right: 4px;
+}
 
-    .el-tabs__nav-next,
-    .el-tabs__nav-prev {
-        line-height: 32px;
-    }
+.breadcrumb-left :deep(.el-breadcrumb) {
+    font-size: 14px;
+}
 
-    &.el-tabs {
-        --el-tabs-header-height: 28px;
+.breadcrumb-left :deep(.el-breadcrumb__item) {
+    .el-breadcrumb__inner {
+        color: #606266;
+    }
+    &:last-child .el-breadcrumb__inner {
+        color: #303133;
     }
 }
 
-.Tabs-close-box {
-    position: absolute;
-    right: 0;
-    top: 0;
-    box-sizing: border-box;
-    padding-top: 1px;
-    text-align: center;
-    width: 110px;
-    height: 30px;
-    background: #fff;
-    box-shadow: -3px 0 15px 3px rgba(0, 0, 0, 0.1);
-    z-index: 10;
+.breadcrumb-right {
+    width: 200px;
+}
+
+.breadcrumb-right :deep(.el-input__wrapper) {
+    border-radius: 4px;
 }
 </style>

@@ -4,14 +4,6 @@
         <div class="header-left">
             <img class="logo" src="../assets/img/logo.svg" alt="" />
             <div class="web-title">后台管理系统</div>
-            <div class="collapse-btn" @click="collapseChage">
-                <el-icon v-if="sidebar.collapse">
-                    <Expand />
-                </el-icon>
-                <el-icon v-else>
-                    <Fold />
-                </el-icon>
-            </div>
             <!-- 横向导航栏 -->
             <div class="nav-tabs">
                 <div 

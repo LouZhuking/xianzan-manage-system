@@ -5,7 +5,9 @@ export const useSidebarStore = defineStore('sidebar', {
 		return {
 			collapse: false,
 			bgColor: localStorage.getItem('sidebar-bg-color') || '#324157',
-			textColor: localStorage.getItem('sidebar-text-color') || '#bfcbd9'
+			textColor: localStorage.getItem('sidebar-text-color') || '#bfcbd9',
+			// 当前选中的供应商
+			activeSupplier: null as { index: number; name: string } | null
 		};
 	},
 	getters: {},
@@ -20,6 +22,9 @@ export const useSidebarStore = defineStore('sidebar', {
 		setTextColor(color: string) {
 			this.textColor = color;
 			localStorage.setItem('sidebar-text-color', color);
+		},
+		setActiveSupplier(index: number, name: string) {
+			this.activeSupplier = { index, name };
 		}
 	}
 });
