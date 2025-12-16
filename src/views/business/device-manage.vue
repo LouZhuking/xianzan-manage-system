@@ -1,5 +1,9 @@
 <template>
-    <div class="page-container">
+    <!-- 经销商视图：设备状态详情 -->
+    <DeviceStatusDetail v-if="isSupplier" />
+    
+    <!-- 管理员视图：设备管理列表 -->
+    <div v-else class="page-container">
         <!-- 左侧设备概况面板 -->
         <div class="overview-panel">
             <!-- 面板标题 -->
@@ -213,9 +217,17 @@
 </template>
 
 <script setup lang="ts" name="device-manage">
-import { ref, reactive, onMounted, onUnmounted } from 'vue';
-import { QuestionFilled, DCaret } from '@element-plus/icons-vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { QuestionFilled } from '@element-plus/icons-vue';
 import * as echarts from 'echarts';
+import { usePermissStore } from '@/store/permiss';
+import DeviceStatusDetail from './device-status-detail.vue';
+
+// 权限store
+const permissStore = usePermissStore();
+
+// 判断是否为经销商
+const isSupplier = computed(() => permissStore.isSupplier);
 
 // 状态项接口
 interface StatusItem {
