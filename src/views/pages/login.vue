@@ -42,7 +42,7 @@
                             <div class="password-options">
                                 <el-checkbox v-model="rememberPassword" label="记住用户名" />
                             </div>
-                            <el-button class="submit-btn" type="primary" size="large" @click="handleLogin">登录</el-button>
+                            <el-button class="submit-btn" type="primary" size="large" :loading="loginLoading" @click="handleLogin">登录</el-button>
                             <!-- Tips提示 -->
                             <p class="login-tips">Tips：成功登录即代表注册成功</p>
                         </el-form>
@@ -87,6 +87,18 @@ import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import { getToken, loginByAccount } from '@/api/index';
 
+// 防抖函数
+function debounce<T extends (...args: any[]) => any>(fn: T, delay: number = 500) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    return function (this: any, ...args: Parameters<T>) {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            fn.apply(this, args);
+            timer = null;
+        }, delay);
+    };
+}
+
 // 定义接口类型
 interface LoginInfo {
     username: string;
@@ -113,6 +125,9 @@ const savedUsername = localStorage.getItem('login-username');
 
 // 记住用户名状态
 const rememberPassword = ref(!!savedUsername);
+
+// 登录按钮loading状态，防止重复点击
+const loginLoading = ref(false);
 
 // 账号密码登录表单
 const loginForm = ref<FormInstance>();
@@ -173,12 +188,16 @@ const phoneRules: FormRules = {
 };
 
 
-// 账号密码登录处理
-const handleLogin = async () => {
+// 账号密码登录处理（核心逻辑）
+const doLogin = async () => {
     if (!loginForm.value) return;
     
     loginForm.value.validate(async (valid: boolean) => {
         if (valid) {
+            // 防止重复提交
+            if (loginLoading.value) return;
+            loginLoading.value = true;
+            
             try {
                 // 第一步：使用固定账号获取 token
                 console.log('=== 第一步：获取Token ===');
@@ -265,6 +284,8 @@ const handleLogin = async () => {
                 }
             } catch (error: any) {
                 console.error('登录错误:', error);
+            } finally {
+                loginLoading.value = false;
             }
         } else {
             ElMessage.error('请检查输入信息');
@@ -273,6 +294,8 @@ const handleLogin = async () => {
     });
 };
 
+// 使用防抖包装登录函数，500ms内多次点击只执行最后一次
+const handleLogin = debounce(doLogin, 500);
 
 // 手机号登录处理
 const handlePhoneLogin = () => {
