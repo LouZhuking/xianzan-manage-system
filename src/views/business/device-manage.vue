@@ -1,9 +1,10 @@
 <template>
-    <!-- 经销商视图：设备状态详情 -->
-    <DeviceStatusDetail v-if="isSupplier" />
-    
-    <!-- 管理员视图：设备管理列表 -->
-    <div v-else class="page-container">
+    <div class="device-manage-wrapper">
+        <!-- 经销商视图：设备状态详情 -->
+        <DeviceStatusDetail v-if="isSupplier" />
+        
+        <!-- 管理员视图：设备管理列表 -->
+        <div v-else class="page-container">
         <!-- 左侧设备概况面板 -->
         <div class="overview-panel">
             <!-- 面板标题 -->
@@ -214,10 +215,11 @@
             </div>
         </div>
     </div>
+    </div>
 </template>
 
 <script setup lang="ts" name="device-manage">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { QuestionFilled } from '@element-plus/icons-vue';
 import * as echarts from 'echarts';
 import { usePermissStore } from '@/store/permiss';
@@ -331,13 +333,35 @@ const handleResize = () => {
 };
 
 onMounted(() => {
-    initChart();
+    // 只有管理员视图才需要初始化图表
+    if (!isSupplier.value) {
+        nextTick(() => {
+            initChart();
+        });
+    }
     window.addEventListener('resize', handleResize);
 });
 
 onUnmounted(() => {
     window.removeEventListener('resize', handleResize);
-    chartInstance?.dispose();
+    if (chartInstance) {
+        chartInstance.dispose();
+        chartInstance = null;
+    }
+});
+
+// 监听角色变化，重新初始化图表
+watch(isSupplier, (newVal) => {
+    if (!newVal) {
+        nextTick(() => {
+            initChart();
+        });
+    } else {
+        if (chartInstance) {
+            chartInstance.dispose();
+            chartInstance = null;
+        }
+    }
 });
 
 // 查询参数
@@ -448,6 +472,11 @@ const handlePageChange = (val: number) => {
 </script>
 
 <style scoped>
+.device-manage-wrapper {
+    width: 100%;
+    height: 100%;
+}
+
 .page-container {
     display: flex;
     gap: 15px;
