@@ -236,9 +236,13 @@
     </div>
 </template>
 
-<script setup lang="ts" name="device-status-detail">
+<script setup lang="ts">
 import { ref, reactive } from 'vue';
 import { QuestionFilled, Edit } from '@element-plus/icons-vue';
+
+defineOptions({
+    name: 'device-status-detail'
+});
 
 // 设备基本信息
 const deviceInfo = reactive({

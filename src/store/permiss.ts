@@ -61,12 +61,14 @@ export const usePermissStore = defineStore('permiss', {
         };
     },
     getters: {
-        // 是否为管理员
+        // 是否为管理员（基于roleId判断）
         isAdmin(): boolean {
+            // 优先使用 store 的 role，确保响应式
             return this.role === 'admin';
         },
         // 是否为供应商
         isSupplier(): boolean {
+            // 优先使用 store 的 role，确保响应式
             return this.role === 'supplier';
         }
     },
@@ -78,6 +80,22 @@ export const usePermissStore = defineStore('permiss', {
         setRole(role: UserRole) {
             this.role = role;
             localStorage.setItem('vuems_role', role);
+            console.log('角色已更新:', role);
+        },
+        // 从 localStorage 重新加载用户角色
+        refreshRole() {
+            const username = localStorage.getItem('vuems_name');
+            const roleId = localStorage.getItem('vuems_roleId');
+            
+            let userRole: UserRole = 'user';
+            if (username === 'admin' || roleId === '1') {
+                userRole = 'admin';
+            } else if (roleId === '2') {
+                userRole = 'supplier';
+            }
+            
+            this.role = userRole;
+            console.log('角色已刷新:', userRole);
         },
     },
 });

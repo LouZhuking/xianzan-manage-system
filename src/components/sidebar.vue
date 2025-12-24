@@ -2,26 +2,33 @@
     <div class="sidebar">
         <!-- 管理员视图：供应商列表 -->
         <div v-if="isAdmin" class="supplier-list">
-            <div 
-                v-for="(item, index) in supplierList" 
-                :key="index"
-                :class="['supplier-item', { 'is-active': index === activeSupplierIndex }]"
-                @click="handleSupplierClick(index)"
-            >
-                <!-- 左侧金色装饰条（仅选中项显示） -->
-                <div v-if="index === activeSupplierIndex" class="sidebar-border"></div>
-                
-                <!-- 图标 -->
-                <el-icon class="supplier-icon">
-                    <Document />
-                </el-icon>
-                
-                <!-- 供应商名称 -->
-                <span class="supplier-name">{{ item.name }}</span>
-                
-                <!-- 徽章 -->
-                <span v-if="item.badge" class="supplier-badge">{{ item.badge }}</span>
+            <!-- 加载状态 -->
+            <div v-if="loading" class="loading-wrapper">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                <span>加载中...</span>
             </div>
+            <template v-else>
+                <div 
+                    v-for="(item, index) in supplierList" 
+                    :key="item.id"
+                    :class="['supplier-item', { 'is-active': index === activeSupplierIndex }]"
+                    @click="handleSupplierClick(index)"
+                >
+                    <!-- 左侧金色装饰条（仅选中项显示） -->
+                    <div v-if="index === activeSupplierIndex" class="sidebar-border"></div>
+                    
+                    <!-- 图标 -->
+                    <el-icon class="supplier-icon">
+                        <Document />
+                    </el-icon>
+                    
+                    <!-- 供应商名称 -->
+                    <span class="supplier-name">{{ item.name }}</span>
+                    
+                    <!-- 徽章（显示设备数量） -->
+                    <span v-if="item.badge" class="supplier-badge">{{ item.badge }}</span>
+                </div>
+            </template>
         </div>
 
         <!-- 供应商视图：供应商名称 + 设备列表 -->
@@ -34,8 +41,14 @@
                 <span class="header-title">{{ currentSupplierName }}</span>
             </div>
             
+            <!-- 加载状态 -->
+            <div v-if="loading" class="loading-wrapper">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                <span>加载中...</span>
+            </div>
+            
             <!-- 设备列表 -->
-            <div class="device-list">
+            <div v-else class="device-list">
                 <div 
                     v-for="(device, index) in deviceList" 
                     :key="device.id"
@@ -62,9 +75,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
-import { Document, Monitor, OfficeBuilding } from '@element-plus/icons-vue';
-import { useSidebarStore, type DeviceInfo } from '@/store/sidebar';
+import { computed, onMounted } from 'vue';
+import { Document, Monitor, OfficeBuilding, Loading } from '@element-plus/icons-vue';
+import { useSidebarStore, type DeviceInfo, type SupplierInfo } from '@/store/sidebar';
 import { usePermissStore } from '@/store/permiss';
 
 const sidebarStore = useSidebarStore();
@@ -74,37 +87,34 @@ const permissStore = usePermissStore();
 const isAdmin = computed(() => permissStore.isAdmin);
 
 // ========== 管理员视图数据 ==========
-// 供应商列表假数据
-const supplierList = ref([
-    { name: '供应商总览', badge: null },
-    { name: '供应商1号', badge: '9' },
-    { name: '供应商2号', badge: '9' },
-    { name: '供应商3号', badge: null },
-    { name: '供应商4号', badge: null },
-    { name: '供应商5号', badge: null },
-    { name: '供应商6号', badge: null },
-    { name: '供应商7号', badge: null },
-    { name: '供应商8号', badge: null },
-    { name: '供应商9号', badge: null },
-    { name: '供应商10号', badge: null },
-    { name: '供应商11号', badge: null },
-    { name: '供应商12号', badge: null },
-    { name: '供应商13号', badge: null },
-    { name: '供应商14号', badge: null },
-]);
+// 供应商列表（从store获取）
+const supplierList = computed(() => {
+    // 在列表前添加"供应商总览"选项
+    const overview = { id: 0, name: '供应商总览', badge: null, devices: [] };
+    return [overview, ...sidebarStore.supplierList];
+});
+
+// 数据加载状态
+const loading = computed(() => sidebarStore.loading);
 
 // 当前选中的供应商索引
 const activeSupplierIndex = computed(() => sidebarStore.activeSupplier?.index ?? null);
 
 // 处理供应商点击事件
 const handleSupplierClick = (index: number) => {
-    sidebarStore.setActiveSupplier(index, supplierList.value[index].name);
+    const supplier = supplierList.value[index];
+    sidebarStore.setActiveSupplier(index, supplier.name);
+    
+    // 如果点击的不是"供应商总览"，可以设置当前供应商信息
+    if (index > 0) {
+        sidebarStore.setCurrentSupplierInfo(supplier);
+    }
 };
 
 // ========== 供应商视图数据 ==========
 // 当前供应商名称
 const currentSupplierName = computed(() => {
-    return sidebarStore.currentSupplierInfo?.name || '供应商1号';
+    return sidebarStore.currentSupplierInfo?.name || '供应商';
 });
 
 // 设备列表
@@ -118,29 +128,34 @@ const handleDeviceClick = (index: number, device: DeviceInfo) => {
     sidebarStore.setActiveDevice(index, device.id, device.name);
 };
 
-// 初始化供应商数据（非管理员时）
-onMounted(() => {
-    if (!isAdmin.value) {
-        // 模拟获取当前供应商的设备数据
-        // 实际项目中应该从API获取
-        const mockSupplierData = {
-            id: 'supplier_1',
-            name: '供应商1号',
-            badge: '9',
-            devices: [
-                { id: 'WOA00001', name: 'WOA00001', status: 'online' as const },
-                { id: 'WOA00002', name: 'WOA00002', status: 'online' as const },
-                { id: 'WOA00003', name: 'WOA00003', status: 'offline' as const },
-                { id: 'WOA00004', name: 'WOA00004', status: 'online' as const },
-                { id: 'WOA00005', name: 'WOA00005', status: 'fault' as const },
-                { id: 'WOA00006', name: 'WOA00006', status: 'online' as const },
-                { id: 'WOA00007', name: 'WOA00007', status: 'online' as const },
-                { id: 'WOA00008', name: 'WOA00008', status: 'offline' as const },
-                { id: 'WOA00009', name: 'WOA00009', status: 'online' as const },
-            ]
-        };
-        sidebarStore.setCurrentSupplierInfo(mockSupplierData);
+// 初始化数据
+const initData = async () => {
+    // 从API获取供应商设备列表
+    const list = await sidebarStore.fetchDealerDeviceList();
+    console.log('获取到的供应商列表:', list);
+    console.log('是否为管理员:', isAdmin.value);
+    
+    if (!isAdmin.value && list.length > 0) {
+        // 非管理员：根据dealerId匹配当前用户的供应商
+        const userDealerId = localStorage.getItem('vuems_dealerId');
+        console.log('用户dealerId:', userDealerId);
+        if (userDealerId) {
+            const userSupplier = list.find((s: SupplierInfo) => s.id === Number(userDealerId));
+            if (userSupplier) {
+                sidebarStore.setCurrentSupplierInfo(userSupplier);
+            } else {
+                // 如果没找到匹配的，使用第一个
+                sidebarStore.setCurrentSupplierInfo(list[0]);
+            }
+        } else {
+            // 没有dealerId，使用第一个供应商
+            sidebarStore.setCurrentSupplierInfo(list[0]);
+        }
     }
+};
+
+onMounted(() => {
+    initData();
 });
 </script>
 
@@ -330,5 +345,31 @@ onMounted(() => {
 
 .device-status.fault {
     background-color: #f56c6c;
+}
+
+/* 加载状态样式 */
+.loading-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: #999;
+    font-size: 14px;
+}
+
+.loading-wrapper .is-loading {
+    font-size: 24px;
+    margin-bottom: 10px;
+    animation: rotating 2s linear infinite;
+}
+
+@keyframes rotating {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
 }
 </style>

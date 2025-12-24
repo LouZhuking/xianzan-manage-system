@@ -129,11 +129,11 @@ const rememberPassword = ref(!!savedUsername);
 // 登录按钮loading状态，防止重复点击
 const loginLoading = ref(false);
 
-// 账号密码登录表单
+// 账号密码登录表单 - 默认使用管理员账号
 const loginForm = ref<FormInstance>();
 const loginParam = reactive<LoginInfo>({
-    username: savedUsername || '',
-    password: '', // 安全修复：密码不再从localStorage恢复
+    username: savedUsername || 'admin',
+    password: '123',
 });
 
 // 账号密码登录验证规则
@@ -234,6 +234,17 @@ const doLogin = async () => {
                     // roleId = 1 → 管理员, roleId = 2 → 经销商
                     const userInfo = loginResponse.data?.userInfo;
                     const roleId = userInfo?.roleId;
+                    const dealerId = userInfo?.dealerId;
+                    
+                    // 保存dealerId供后续使用
+                    if (dealerId) {
+                        localStorage.setItem('vuems_dealerId', String(dealerId));
+                    }
+                    
+                    // 保存roleId
+                    if (roleId) {
+                        localStorage.setItem('vuems_roleId', String(roleId));
+                    }
                     
                     let userRole: 'admin' | 'supplier' | 'user' = 'user';
                     if (roleId === 1) {
@@ -242,32 +253,31 @@ const doLogin = async () => {
                         userRole = 'supplier';
                     }
                     
-                    console.log('用户角色:', userRole, 'roleId:', roleId);
+                    console.log('用户角色:', userRole, 'roleId:', roleId, 'dealerId:', dealerId);
                     
                     const keys = permiss.defaultList[userRole];
                     permiss.handleSet(keys);
                     permiss.setRole(userRole);
                     
-                    // 如果是经销商，设置经销商信息
-                    if (userRole === 'supplier') {
-                        sidebarStore.setCurrentSupplierInfo({
-                            id: userInfo?.user || loginParam.username,
-                            name: userInfo?.userName || '经销商',
-                            badge: '9',
-                            devices: [
-                                { id: 'WOA00001', name: 'WOA00001', status: 'online' },
-                                { id: 'WOA00002', name: 'WOA00002', status: 'online' },
-                                { id: 'WOA00003', name: 'WOA00003', status: 'offline' },
-                                { id: 'WOA00004', name: 'WOA00004', status: 'online' },
-                                { id: 'WOA00005', name: 'WOA00005', status: 'fault' },
-                                { id: 'WOA00006', name: 'WOA00006', status: 'online' },
-                                { id: 'WOA00007', name: 'WOA00007', status: 'online' },
-                                { id: 'WOA00008', name: 'WOA00008', status: 'offline' },
-                                { id: 'WOA00009', name: 'WOA00009', status: 'online' },
-                            ]
-                        });
-                    } else {
-                        sidebarStore.clearSupplierInfo();
+                    // 清除之前的供应商信息
+                    sidebarStore.clearSupplierInfo();
+                    
+                    // 重新获取新用户的供应商设备列表
+                    console.log('重新获取供应商设备列表，用户:', loginParam.username);
+                    const list = await sidebarStore.fetchDealerDeviceList();
+                    
+                    // 如果是非管理员，设置当前供应商信息
+                    if (!permiss.isAdmin && list.length > 0) {
+                        if (dealerId) {
+                            const userSupplier = list.find(s => s.id === dealerId);
+                            if (userSupplier) {
+                                sidebarStore.setCurrentSupplierInfo(userSupplier);
+                            } else {
+                                sidebarStore.setCurrentSupplierInfo(list[0]);
+                            }
+                        } else {
+                            sidebarStore.setCurrentSupplierInfo(list[0]);
+                        }
                     }
                     
                     // 记住用户名处理
@@ -278,7 +288,18 @@ const doLogin = async () => {
                     }
                     
                     ElMessage.success('登录成功');
-                    router.push('/');
+                    
+                    // 跳转到首页，并添加时间戳强制刷新
+                    await router.push('/');
+                    
+                    // 根据角色跳转到对应页面
+                    if (userRole === 'admin') {
+                        // 管理员跳转到设备管理页
+                        await router.push('/device-manage');
+                    } else if (userRole === 'supplier') {
+                        // 经销商跳转到设备管理页（会显示经销商视图）
+                        await router.push('/device-manage');
+                    }
                 } else {
                     ElMessage.error(loginResponse.msg || '登录失败');
                 }

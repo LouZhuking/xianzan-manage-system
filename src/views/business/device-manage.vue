@@ -1,5 +1,5 @@
 <template>
-    <div class="device-manage-wrapper">
+    <div class="device-manage-wrapper" :key="viewKey">
         <!-- 经销商视图：设备状态详情 -->
         <DeviceStatusDetail v-if="isSupplier" />
         
@@ -88,7 +88,6 @@
                         @click="handleFilterChange(tag.key)"
                     >
                         {{ tag.label }}
-                        <span v-if="tag.count > 0" class="tag-count">{{ tag.count }}</span>
                     </el-tag>
                 </div>
             </div>
@@ -144,8 +143,8 @@
                         <span>摄像头</span>
                     </template>
                     <template #default="scope">
-                        <span :class="['fault-tag', { 'is-fault': scope.row.camera === 'fault' }]">
-                            {{ scope.row.camera === 'fault' ? '故障' : '正常' }}
+                        <span :class="['fault-tag', { 'is-fault': scope.row.camera === '故障' }]">
+                            {{ scope.row.camera }}
                         </span>
                     </template>
                 </el-table-column>
@@ -154,8 +153,8 @@
                         <span>显示屏</span>
                     </template>
                     <template #default="scope">
-                        <span :class="['fault-tag', { 'is-fault': scope.row.display === 'fault' }]">
-                            {{ scope.row.display === 'fault' ? '故障' : '正常' }}
+                        <span :class="['fault-tag', { 'is-fault': scope.row.display === '故障' }]">
+                            {{ scope.row.display }}
                         </span>
                     </template>
                 </el-table-column>
@@ -164,8 +163,8 @@
                         <span>膜切机</span>
                     </template>
                     <template #default="scope">
-                        <span :class="['fault-tag', { 'is-fault': scope.row.filmCutter === 'fault' }]">
-                            {{ scope.row.filmCutter === 'fault' ? '故障' : '正常' }}
+                        <span :class="['fault-tag', { 'is-fault': scope.row.filmCutter === '故障' }]">
+                            {{ scope.row.filmCutter }}
                         </span>
                     </template>
                 </el-table-column>
@@ -182,22 +181,25 @@
                         <span>打印机</span>
                     </template>
                     <template #default="scope">
-                        <span :class="['fault-tag', { 'is-fault': scope.row.printer === 'fault' }]">
-                            {{ scope.row.printer === 'fault' ? '故障' : '正常' }}
+                        <span :class="['fault-tag', { 'is-fault': scope.row.printer === '故障' }]">
+                            {{ scope.row.printer }}
                         </span>
                     </template>
                 </el-table-column>
-                <el-table-column label="色带" align="center" :resizable="false" width="70">
+                <el-table-column label="色带" align="center" :resizable="false" width="140">
                     <template #header>
                         <span>色带</span>
                     </template>
                     <template #default="scope">
-                        <div class="ribbon-status">
-                            <div class="ribbon-icon" :class="{ 'is-fault': scope.row.ribbon === 'fault' }">
-                                <span class="ribbon-bar" v-for="i in 3" :key="i"></span>
-                            </div>
-                            <span v-if="scope.row.ribbon === 'fault'" class="ribbon-badge">1</span>
-                        </div>
+                        <span class="usage-text">{{ scope.row.ribbonUsage }}</span>
+                    </template>
+                </el-table-column>
+                <el-table-column label="剩余纸张" align="center" :resizable="false" width="140">
+                    <template #header>
+                        <span>剩余纸张</span>
+                    </template>
+                    <template #default="scope">
+                        <span class="usage-text">{{ scope.row.paperUsage }}</span>
                     </template>
                 </el-table-column>
             </el-table>
@@ -223,10 +225,16 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from
 import { QuestionFilled } from '@element-plus/icons-vue';
 import * as echarts from 'echarts';
 import { usePermissStore } from '@/store/permiss';
+import { useSidebarStore } from '@/store/sidebar';
+import { getDeviceStatus, getDeviceOverview, type DeviceOverviewResponse } from '@/api/index';
 import DeviceStatusDetail from './device-status-detail.vue';
 
 // 权限store
 const permissStore = usePermissStore();
+const sidebarStore = useSidebarStore();
+
+// 视图key，用于强制重新渲染
+const viewKey = ref(0);
 
 // 判断是否为经销商
 const isSupplier = computed(() => permissStore.isSupplier);
@@ -256,28 +264,249 @@ interface DeviceStatusItem {
     filmCutter: string;
     bladeUsage: string;
     printer: string;
-    ribbon: string;
+    ribbonUsage: string;
+    paperUsage: string;
+    deviceCode: string;
 }
 
-// 设备概况静态数据
-const overviewData = reactive({
-    summary: {
-        totalDevices: 14,
-        faultCount: 5,
-        normalCount: 14
-    },
-    faultWarning: [
-        { label: '摄像头', count: 2 },
-        { label: '膜切机', count: 2 },
-        { label: '摄像头', count: 2 },
-        { label: '打印机', count: 2 },
-        { label: '网络信号', count: 2 }
-    ] as StatusItem[],
-    maintenance: [
-        { label: '刀头', count: 2 },
-        { label: '纸张', count: 2 },
-        { label: '色带', count: 2 }
-    ] as StatusItem[]
+// 设备部件状态缓存接口
+interface DevicePartStatus {
+    camera: string;        // 摄像头状态
+    display: string;       // 显示屏状态
+    filmCutter: string;    // 膜切机状态
+    printer: string;       // 打印机状态
+    bladeUsage: string;    // 刀头使用量
+    ribbonUsage: string;   // 色带使用量
+    paperUsage: string;    // 剩余纸张
+    deviceAddress: string; // 设备地址
+}
+
+// 当前选中的供应商名称
+const currentSupplierName = computed(() => {
+    return sidebarStore.activeSupplier?.name || '供应商总览';
+});
+
+// 当前选中的供应商索引
+const currentSupplierIndex = computed(() => {
+    return sidebarStore.activeSupplier?.index ?? 0;
+});
+
+// 设备实时状态缓存 Map<deviceCode, { deviceStatus: string, networkSignal: number }>
+const deviceStatusMap = ref<Map<string, { deviceStatus: string; networkSignal: number }>>(new Map());
+
+// 设备部件状态缓存 Map<deviceCode, DevicePartStatus>
+const devicePartStatusMap = ref<Map<string, DevicePartStatus>>(new Map());
+
+// 设备概况数据
+const overviewApiData = ref<DeviceOverviewResponse['data'] | null>(null);
+
+/**
+ * 根据partNum解析设备状态和网络信号
+ * @param partNum 设备状态码 0-4
+ * @returns { deviceStatus: string, networkSignal: number }
+ */
+const parseDeviceStatus = (partNum: number | undefined | null): { deviceStatus: string; networkSignal: number } => {
+    // 确保 partNum 是有效数字，默认为 0
+    const validPartNum = typeof partNum === 'number' ? partNum : 0;
+    // partNum为0或1时设备离线，否则运行中
+    const deviceStatus = validPartNum <= 1 ? '离线中' : '运行中';
+    // partNum直接对应网络信号格数
+    const networkSignal = validPartNum;
+    return { deviceStatus, networkSignal };
+};
+
+/**
+ * 从partList中提取指定部件的状态
+ * @param partList 部件列表
+ * @param partName 部件名称
+ * @returns 部件状态，默认返回"正常"
+ */
+const getPartStatus = (partList: Array<{ partName: string; partStatus: string }> | undefined | null, partName: string): string => {
+    if (!partList || partList.length === 0) {
+        return '正常';
+    }
+    const part = partList.find(p => p.partName === partName);
+    return part?.partStatus || '正常';
+};
+
+/**
+ * 获取单个设备的实时状态
+ * @param deviceCode 设备编码
+ */
+const fetchDeviceStatus = async (deviceCode: string) => {
+    try {
+        const res = await getDeviceStatus(deviceCode);
+        console.log(`设备 ${deviceCode} API响应:`, res);
+        
+        if (res.code === 200 && res.data) {
+            // 从 partList 数组中查找网络信号数据（partName === '网络信号'）
+            const partList = res.data.partList || [];
+            const networkPart = partList.find((part: any) => part.partName === '网络信号');
+            const partNum = networkPart?.partNum ?? 0;
+            
+            console.log(`设备 ${deviceCode} partNum:`, partNum);
+            
+            const status = parseDeviceStatus(partNum);
+            console.log(`设备 ${deviceCode} 解析后状态:`, status);
+            
+            // 创建新的 Map 实例以触发 Vue 响应式更新
+            const newMap = new Map(deviceStatusMap.value);
+            newMap.set(deviceCode, { 
+                deviceStatus: status.deviceStatus, 
+                networkSignal: status.networkSignal 
+            });
+            deviceStatusMap.value = newMap;
+            console.log('更新后的 deviceStatusMap:', Array.from(deviceStatusMap.value.entries()));
+            
+            // 提取设备部件状态并存储到缓存
+            // 获取刀头使用量
+            const bladePart = partList.find((part: any) => part.partName === '刀头');
+            const bladeUsage = bladePart ? `${bladePart.partNum}/${bladePart.partTotal}` : '-';
+            
+            // 获取色带使用量
+            const ribbonPart = partList.find((part: any) => part.partName === '色带');
+            const ribbonUsage = ribbonPart ? `${ribbonPart.partNum}/${ribbonPart.partTotal}` : '-';
+            
+            // 获取剩余纸张
+            const paperPart = partList.find((part: any) => part.partName === '剩余纸张');
+            const paperUsage = paperPart ? `${paperPart.partNum}/${paperPart.partTotal}` : '-';
+            
+            // 获取设备地址
+            const deviceAddress = (res.data as any).deviceAddress || '-';
+            
+            const partStatus: DevicePartStatus = {
+                camera: getPartStatus(partList, '摄像头'),
+                display: getPartStatus(partList, '显示屏'),
+                filmCutter: getPartStatus(partList, '膜切机'),
+                printer: getPartStatus(partList, '打印机'),
+                bladeUsage: bladeUsage,
+                ribbonUsage: ribbonUsage,
+                paperUsage: paperUsage,
+                deviceAddress: deviceAddress
+            };
+            
+            // 创建新的 Map 实例以触发 Vue 响应式更新
+            const newPartMap = new Map(devicePartStatusMap.value);
+            newPartMap.set(deviceCode, partStatus);
+            devicePartStatusMap.value = newPartMap;
+            console.log(`设备 ${deviceCode} 部件状态:`, partStatus);
+        }
+    } catch (error) {
+        console.error(`获取设备 ${deviceCode} 状态失败:`, error);
+    }
+};
+
+/**
+ * 批量获取所有设备的实时状态
+ */
+const fetchAllDeviceStatus = async () => {
+    const devices = currentSupplierDevices.value;
+    console.log('准备获取设备状态，设备列表:', devices);
+    if (devices.length === 0) {
+        console.log('设备列表为空，跳过获取状态');
+        return;
+    }
+    // 并发请求所有设备状态
+    await Promise.all(devices.map(device => fetchDeviceStatus(device.deviceCode)));
+    console.log('所有设备状态获取完成');
+};
+
+/**
+ * 获取设备概况数据
+ */
+const fetchDeviceOverview = async () => {
+    try {
+        // 从 localStorage 获取当前登录用户名
+        const userName = localStorage.getItem('vuems_name') || 'admin';
+        console.log('获取设备概况，用户:', userName);
+        
+        const res = await getDeviceOverview(userName);
+        console.log('设备概况API响应:', res);
+        
+        if (res.code === 200 && res.data) {
+            overviewApiData.value = res.data;
+            console.log('设备概况数据更新:', overviewApiData.value);
+        }
+    } catch (error) {
+        console.error('获取设备概况失败:', error);
+    }
+};
+
+// 获取当前供应商的设备列表
+const currentSupplierDevices = computed(() => {
+    const index = currentSupplierIndex.value;
+    // index为0表示"供应商总览"，显示所有设备
+    if (index === 0) {
+        // 返回所有供应商的设备
+        return sidebarStore.supplierList.flatMap(supplier => 
+            (supplier.devices || []).map(device => ({
+                ...device,
+                supplierName: supplier.name
+            }))
+        );
+    }
+    // 否则返回选中供应商的设备（index-1因为supplierList不包含"供应商总览"）
+    const supplier = sidebarStore.supplierList[index - 1];
+    if (supplier && supplier.devices) {
+        return supplier.devices.map(device => ({
+            ...device,
+            supplierName: supplier.name
+        }));
+    }
+    return [];
+});
+
+// 设备概况动态数据
+const overviewData = computed(() => {
+    // 如果有API数据，使用API数据
+    if (overviewApiData.value) {
+        const data = overviewApiData.value;
+        return {
+            summary: {
+                totalDevices: data.totalDevices,
+                faultCount: data.faultMaintenanceDevices,
+                normalCount: data.runningDevices
+            },
+            faultWarning: [
+                { label: '摄像头', count: data.faultWarningStats.cameraFault },
+                { label: '膜切机', count: data.faultWarningStats.cutterFault },
+                { label: '显示屏', count: data.faultWarningStats.displayFault },
+                { label: '打印机', count: data.faultWarningStats.printerFault },
+                { label: '网络信号', count: data.faultWarningStats.networkFault }
+            ] as StatusItem[],
+            maintenance: [
+                { label: '刀头', count: data.maintenanceStats?.bladeCount || 0 },
+                { label: '纸张', count: data.maintenanceStats?.paperCount || 0 },
+                { label: '色带', count: data.maintenanceStats?.ribbonCount || 0 }
+            ] as StatusItem[]
+        };
+    }
+    
+    // 降级方案：使用本地计算的数据
+    const devices = currentSupplierDevices.value;
+    const totalDevices = devices.length;
+    const faultCount = devices.filter(d => d.status === 'fault' || d.status === 'offline').length;
+    const normalCount = devices.filter(d => d.status === 'online').length;
+    
+    return {
+        summary: {
+            totalDevices,
+            faultCount,
+            normalCount
+        },
+        faultWarning: [
+            { label: '摄像头', count: 0 },
+            { label: '膜切机', count: 0 },
+            { label: '显示屏', count: 0 },
+            { label: '打印机', count: 0 },
+            { label: '网络信号', count: faultCount }
+        ] as StatusItem[],
+        maintenance: [
+            { label: '刀头', count: 0 },
+            { label: '纸张', count: 0 },
+            { label: '色带', count: 0 }
+        ] as StatusItem[]
+    };
 });
 
 // ECharts 实例
@@ -289,14 +518,22 @@ const initChart = () => {
     if (!chartDom) return;
     
     chartInstance = echarts.init(chartDom);
+    updateChart();
+};
+
+// 更新图表数据
+const updateChart = () => {
+    if (!chartInstance) return;
+    
+    const data = overviewData.value;
     const option = {
         series: [{
             type: 'pie',
             radius: ['55%', '75%'],
             center: ['50%', '50%'],
             data: [
-                { value: overviewData.summary.faultCount, name: '故障维护', itemStyle: { color: '#5DD3D3' } },
-                { value: overviewData.summary.normalCount, name: '运行正常', itemStyle: { color: '#409EFF' } }
+                { value: data.summary.faultCount, name: '故障维护', itemStyle: { color: '#5DD3D3' } },
+                { value: data.summary.normalCount, name: '运行正常', itemStyle: { color: '#409EFF' } }
             ],
             label: { show: false },
             emphasis: { scale: false }
@@ -306,7 +543,7 @@ const initChart = () => {
             left: 'center',
             top: '35%',
             style: {
-                text: overviewData.summary.faultCount.toString(),
+                text: data.summary.faultCount.toString(),
                 fontSize: 32,
                 fontWeight: 'bold',
                 fill: '#333',
@@ -333,8 +570,14 @@ const handleResize = () => {
 };
 
 onMounted(() => {
-    // 只有管理员视图才需要初始化图表
+    // 刷新用户角色，确保与 localStorage 同步
+    permissStore.refreshRole();
+    console.log('当前角色:', permissStore.role, 'isSupplier:', isSupplier.value);
+    
+    // 只有管理员视图才需要初始化图表和获取概况数据
     if (!isSupplier.value) {
+        // 获取设备概况数据
+        fetchDeviceOverview();
         nextTick(() => {
             initChart();
         });
@@ -350,17 +593,70 @@ onUnmounted(() => {
     }
 });
 
-// 监听角色变化，重新初始化图表
-watch(isSupplier, (newVal) => {
+// 监听角色变化，重新初始化图表和数据
+watch(isSupplier, (newVal, oldVal) => {
+    console.log('角色变化：', oldVal, '->', newVal);
+    
+    // 强制重新渲染视图
+    viewKey.value++;
+    
+    // 清空概况数据，避免显示错误数据
+    overviewApiData.value = null;
+    
     if (!newVal) {
+        // 切换到管理员视图
         nextTick(() => {
             initChart();
+            fetchDeviceOverview();
         });
     } else {
+        // 切换到经销商视图
         if (chartInstance) {
             chartInstance.dispose();
             chartInstance = null;
         }
+    }
+});
+
+// 监听供应商切换，更新图表
+watch(currentSupplierIndex, () => {
+    if (!isSupplier.value && chartInstance) {
+        nextTick(() => {
+            updateChart();
+        });
+    }
+    // 供应商切换时重新获取设备状态
+    fetchAllDeviceStatus();
+});
+
+// 监听设备数据变化，更新图表和获取实时状态
+watch(() => sidebarStore.supplierList, (newList) => {
+    if (!isSupplier.value && chartInstance) {
+        nextTick(() => {
+            updateChart();
+        });
+    }
+    // 设备列表有数据时获取设备状态
+    if (newList && newList.length > 0) {
+        fetchAllDeviceStatus();
+    }
+}, { deep: true, immediate: true });
+
+// 监听概况数据变化，更新图表
+watch(overviewApiData, () => {
+    if (!isSupplier.value && chartInstance) {
+        nextTick(() => {
+            updateChart();
+        });
+    }
+});
+
+// 监听供应商列表变化时，同步更新概况数据
+watch(() => sidebarStore.supplierList.length, (newLength, oldLength) => {
+    // 当供应商列表从空到有数据，或数据重新加载时，重新获取概况数据
+    if (newLength > 0 && !isSupplier.value) {
+        console.log('供应商列表更新，重新获取设备概况数据');
+        fetchDeviceOverview();
     }
 });
 
@@ -388,77 +684,42 @@ const filterTags = ref<FilterTag[]>([
     { key: 'paper', label: '剩余纸张', count: 0 }
 ]);
 
-// 设备状态表格数据
-const deviceStatusData = ref<DeviceStatusItem[]>([
-    {
-        supplier: '供应商1号',
-        deviceName: 'WOA00001',
-        location: '新天地广场B1',
-        deviceStatus: '离线中',
-        networkSignal: 2,
-        camera: 'fault',
-        display: 'fault',
-        filmCutter: 'fault',
-        bladeUsage: '6000/8000(75%)',
-        printer: 'normal',
-        ribbon: 'fault'
-    },
-    {
-        supplier: '供应商1号',
-        deviceName: 'WOA00002',
-        location: '新天地广场B1',
-        deviceStatus: '运行中',
-        networkSignal: 3,
-        camera: 'fault',
-        display: 'fault',
-        filmCutter: 'fault',
-        bladeUsage: '6000/8000(75%)',
-        printer: 'normal',
-        ribbon: 'fault'
-    },
-    {
-        supplier: '供应商1号',
-        deviceName: 'WOA00003',
-        location: '新天地广场B1',
-        deviceStatus: '运行中',
-        networkSignal: 4,
-        camera: 'normal',
-        display: 'normal',
-        filmCutter: 'normal',
-        bladeUsage: '6000/8000(75%)',
-        printer: 'normal',
-        ribbon: 'normal'
-    },
-    {
-        supplier: '供应商1号',
-        deviceName: 'WOA00004',
-        location: '新天地广场B1',
-        deviceStatus: '运行中',
-        networkSignal: 4,
-        camera: 'normal',
-        display: 'normal',
-        filmCutter: 'normal',
-        bladeUsage: '6000/8000(75%)',
-        printer: 'normal',
-        ribbon: 'normal'
-    },
-    {
-        supplier: '供应商1号',
-        deviceName: 'WOA00005',
-        location: '新天地广场B1',
-        deviceStatus: '运行中',
-        networkSignal: 4,
-        camera: 'normal',
-        display: 'normal',
-        filmCutter: 'normal',
-        bladeUsage: '6000/8000(75%)',
-        printer: 'normal',
-        ribbon: 'normal'
-    }
-]);
+// 设备状态表格数据 - 从API数据转换，结合实时状态
+const deviceStatusData = computed<DeviceStatusItem[]>(() => {
+    const result = currentSupplierDevices.value.map(device => {
+        // 优先使用实时获取的状态数据
+        const realtimeStatus = deviceStatusMap.value.get(device.deviceCode);
+        // 获取设备部件状态
+        const partStatus = devicePartStatusMap.value.get(device.deviceCode);
+        
+        const networkSignal = realtimeStatus?.networkSignal !== undefined 
+            ? realtimeStatus.networkSignal 
+            : (device.status === 'online' ? 4 : 0);
+        
+        console.log(`设备 ${device.deviceCode} - realtimeStatus:`, realtimeStatus, '最终networkSignal:', networkSignal);
+        
+        return {
+            supplier: device.supplierName,
+            deviceName: device.name,
+            location: partStatus?.deviceAddress || '-', // 使用API返回的设备地址
+            deviceStatus: realtimeStatus?.deviceStatus || (device.status === 'online' ? '运行中' : (device.status === 'offline' ? '离线中' : '故障')),
+            networkSignal: networkSignal,
+            camera: partStatus?.camera || '正常',
+            display: partStatus?.display || '正常',
+            filmCutter: partStatus?.filmCutter || '正常',
+            bladeUsage: partStatus?.bladeUsage || '-',
+            printer: partStatus?.printer || '正常',
+            ribbonUsage: partStatus?.ribbonUsage || '-',
+            paperUsage: partStatus?.paperUsage || '-',
+            deviceCode: device.deviceCode // 保留设备编码用于后续操作
+        };
+    });
+    console.log('deviceStatusData 计算结果:', result);
+    return result;
+});
 
-const pageTotal = ref(5);
-const loading = ref(false);
+const pageTotal = computed(() => deviceStatusData.value.length);
+const loading = computed(() => sidebarStore.loading);
 
 // 筛选切换
 const handleFilterChange = (key: string) => {
@@ -734,7 +995,7 @@ const handlePageChange = (val: number) => {
 .filter-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 16px;
 }
 
 .filter-tag {

@@ -1,23 +1,96 @@
 import axios, { AxiosInstance, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import { ElMessage } from 'element-plus';
 
-// API»ù´¡µØÖ·£¬¸ù¾İÊµ¼ÊÇé¿öĞŞ¸Ä
+// APIåŸºç¡€åœ°å€
 const baseURL = import.meta.env.VITE_API_BASE_URL || '';
 
+// ç¼“å­˜tokenå’Œè¿‡æœŸæ—¶é—´
+let cachedToken: string | null = null;
+let tokenExpireTime: number = 0;
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+// è·å–tokençš„å‡½æ•°ï¼ˆç‹¬ç«‹çš„axioså®ä¾‹ï¼Œé¿å…å¾ªç¯ä¾èµ–ï¼‰
+const getNewToken = async (): Promise<string | null> => {
+    // é˜²æ­¢å¹¶å‘è¯·æ±‚æ—¶é‡å¤è·å–token
+    if (isRefreshing && refreshPromise) {
+        return refreshPromise;
+    }
+    
+    isRefreshing = true;
+    refreshPromise = (async () => {
+        try {
+            console.log('æ­£åœ¨è·å–æ–°token...');
+            const response = await axios({
+                url: 'https://culture.xianzanwl.com/dm/auth/getToken',
+                method: 'POST',
+                data: {
+                    userName: 'dm13918177314',
+                    userPwd: 'a13918177314'
+                },
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            console.log('getTokenå“åº”:', response.data);
+            
+            if (response.data.code === 200 && response.data.data) {
+                cachedToken = response.data.data;
+                // tokenæœ‰æ•ˆæœŸè®¾ä¸º50ç§’ï¼ˆå®é™…60ç§’ï¼Œæå‰10ç§’åˆ·æ–°ï¼‰
+                tokenExpireTime = Date.now() + 50 * 1000;
+                console.log('è·å–æ–°tokenæˆåŠŸ:', cachedToken?.substring(0, 50) + '...');
+                return cachedToken;
+            }
+            console.error('è·å–tokenå¤±è´¥:', response.data.msg);
+            return null;
+        } catch (error) {
+            console.error('è·å–tokenè¯·æ±‚å¤±è´¥:', error);
+            return null;
+        } finally {
+            isRefreshing = false;
+            refreshPromise = null;
+        }
+    })();
+    
+    return refreshPromise;
+};
+
+// å¼ºåˆ¶åˆ·æ–°token
+const forceRefreshToken = async (): Promise<string | null> => {
+    cachedToken = null;
+    tokenExpireTime = 0;
+    isRefreshing = false;
+    refreshPromise = null;
+    return await getNewToken();
+};
+
+// è·å–æœ‰æ•ˆtokenï¼ˆå¦‚æœè¿‡æœŸåˆ™è‡ªåŠ¨åˆ·æ–°ï¼‰
+const getValidToken = async (): Promise<string | null> => {
+    // æ£€æŸ¥ç¼“å­˜çš„tokenæ˜¯å¦æœ‰æ•ˆ
+    if (cachedToken && Date.now() < tokenExpireTime) {
+        return cachedToken;
+    }
+    
+    // è·å–æ–°token
+    return await getNewToken();
+};
+
 const service: AxiosInstance = axios.create({
-    baseURL: baseURL,  // ÅäÖÃ»ù´¡URL
-    timeout: 30000,    // Ôö¼Ó³¬Ê±Ê±¼äµ½30Ãë
+    baseURL: baseURL,
+    timeout: 30000,
     headers: {
         'Content-Type': 'application/json'
     }
 });
 
 service.interceptors.request.use(
-    (config: InternalAxiosRequestConfig) => {
-        // ´ÓlocalStorage»ñÈ¡token²¢Ìí¼Óµ½ÇëÇóÍ·
-        const token = localStorage.getItem('accessToken');
+    async (config: InternalAxiosRequestConfig) => {
+        // è·å–æœ‰æ•ˆtoken
+        const token = await getValidToken();
+        console.log('è¯·æ±‚URL:', config.url, 'ä½¿ç”¨token:', token?.substring(0, 30) + '...');
         if (token && config.headers) {
-            config.headers['hswatersession'] = token;
+            config.headers['token'] = token;
         }
         return config;
     },
@@ -28,53 +101,64 @@ service.interceptors.request.use(
 );
 
 service.interceptors.response.use(
-    (response: AxiosResponse) => {
-        // ·µ»ØÏìÓ¦Êı¾İ
+    async (response: AxiosResponse) => {
         if (response.status === 200) {
-            return response.data;
+            const data = response.data;
+            
+            // æ£€æŸ¥ä¸šåŠ¡é”™è¯¯ç ï¼š500è¡¨ç¤ºtokenè¿‡æœŸæˆ–æ— æƒé™
+            if (data.code === 500 && data.msg === 'No permission to access!') {
+                console.log('Tokenè¿‡æœŸï¼Œå°è¯•åˆ·æ–°...');
+                
+                // å¼ºåˆ¶åˆ·æ–°token
+                const newToken = await forceRefreshToken();
+                if (newToken) {
+                    // é‡æ–°å‘èµ·è¯·æ±‚
+                    const config = response.config;
+                    config.headers['token'] = newToken;
+                    console.log('ä½¿ç”¨æ–°tokené‡è¯•è¯·æ±‚:', config.url);
+                    return service(config);
+                }
+            }
+            
+            return data;
         } else {
             return Promise.reject(response);
         }
     },
     (error: AxiosError) => {
-        console.error('ÇëÇó´íÎó:', error);
+        console.error('è¯·æ±‚é”™è¯¯:', error);
         
-        let errorMessage = 'ÍøÂçÇëÇóÊ§°Ü';
+        let errorMessage = 'ç½‘ç»œè¯·æ±‚å¤±è´¥';
         
         if (error.code === 'ECONNABORTED') {
-            // ³¬Ê±´íÎó
-            errorMessage = 'ÇëÇó³¬Ê±£¬Çë¼ì²éÍøÂçÁ¬½Ó»òAPIµØÖ·ÅäÖÃ';
+            errorMessage = 'è¯·æ±‚è¶…æ—¶ï¼Œè¯·æ£€æŸ¥ç½‘ç»œè¿æ¥æˆ–APIåœ°å€é…ç½®';
         } else if (error.code === 'ERR_NETWORK') {
-            // ÍøÂç´íÎó
-            errorMessage = 'ÍøÂçÁ¬½ÓÊ§°Ü£¬Çë¼ì²éÍøÂç»òAPIµØÖ·ÊÇ·ñÕıÈ·';
+            errorMessage = 'ç½‘ç»œè¿æ¥å¤±è´¥ï¼Œè¯·æ£€æŸ¥ç½‘ç»œå’ŒAPIåœ°å€æ˜¯å¦æ­£ç¡®';
         } else if (error.response) {
-            // ·şÎñÆ÷·µ»ØÁË´íÎó×´Ì¬Âë
             const status = error.response.status;
             switch (status) {
                 case 400:
-                    errorMessage = 'ÇëÇó²ÎÊı´íÎó';
+                    errorMessage = 'è¯·æ±‚å‚æ•°é”™è¯¯';
                     break;
                 case 401:
-                    errorMessage = 'Î´ÊÚÈ¨£¬ÇëÖØĞÂµÇÂ¼';
+                    errorMessage = 'æœªæˆæƒï¼Œè¯·é‡æ–°ç™»å½•';
                     break;
                 case 403:
-                    errorMessage = '¾Ü¾ø·ÃÎÊ';
+                    errorMessage = 'æ‹’ç»è®¿é—®';
                     break;
                 case 404:
-                    errorMessage = 'ÇëÇóµÄ×ÊÔ´²»´æÔÚ';
+                    errorMessage = 'è¯·æ±‚çš„èµ„æºä¸å­˜åœ¨';
                     break;
                 case 500:
-                    errorMessage = '·şÎñÆ÷ÄÚ²¿´íÎó';
+                    errorMessage = 'æœåŠ¡å™¨å†…éƒ¨é”™è¯¯';
                     break;
                 default:
-                    errorMessage = `·şÎñÆ÷´íÎó: ${status}`;
+                    errorMessage = `æœåŠ¡å™¨é”™è¯¯: ${status}`;
             }
         } else if (error.request) {
-            // ÇëÇóÒÑ·¢ËÍµ«Ã»ÓĞÊÕµ½ÏìÓ¦
-            errorMessage = '·şÎñÆ÷ÎŞÏìÓ¦£¬Çë¼ì²éAPIµØÖ·ÅäÖÃ';
+            errorMessage = 'æœåŠ¡å™¨æ— å“åº”ï¼Œè¯·æ£€æŸ¥APIåœ°å€é…ç½®';
         }
         
-        // Ìí¼Ó´íÎó¶ÔÏóµÄmessage
         if (error.message) {
             errorMessage += ` (${error.message})`;
         }
