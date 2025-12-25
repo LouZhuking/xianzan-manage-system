@@ -199,12 +199,86 @@ export interface DeviceOverviewResponse {
 /**
  * 获取设备概况接口
  * @param user 用户账号（必填）
+ * @param dealerName 供应商名称（可选，如 "tinghua"，不传则返回所有供应商的概况）
  * @returns Promise<DeviceOverviewResponse> 返回设备概况统计数据
  */
-export const getDeviceOverview = (user: string): Promise<DeviceOverviewResponse> => {
+export const getDeviceOverview = (user: string, dealerName?: string): Promise<DeviceOverviewResponse> => {
+    const params: { user: string; dealerName?: string } = { user };
+    if (dealerName) {
+        params.dealerName = dealerName;
+    }
     return request({
         url: 'https://culture.xianzanwl.com/dm/device/overview',
         method: 'get',
-        params: { user }
+        params
+    });
+};
+
+/**
+ * 故障记录项接口
+ * @description 实际接口返回的数据结构
+ */
+export interface FaultRecordItem {
+    id: number;
+    deviceCode: string;
+    downTime: string;       // 故障时间
+    partName: string;       // 故障类型：网络信号、摄像头、显示屏、膜切机、打印机
+    partStatus: string;     // 状态：故障、正常（正常表示已修复）
+    repairTime: string | null;  // 修复时间，null表示未修复
+}
+
+/**
+ * 故障记录分页数据接口
+ */
+export interface FaultRecordPageData {
+    total: number;
+    list: FaultRecordItem[];
+    pageNum: number;
+    pageSize: number;
+    size: number;
+    startRow: number;
+    endRow: number;
+    pages: number;
+    prePage: number;
+    nextPage: number;
+    isFirstPage: boolean;
+    isLastPage: boolean;
+    hasPreviousPage: boolean;
+    hasNextPage: boolean;
+    navigatePages: number;
+    navigatepageNums: number[];
+    navigateFirstPage: number;
+    navigateLastPage: number;
+}
+
+/**
+ * 故障记录响应接口
+ * @description 获取设备故障记录列表
+ * 
+ * 接口地址: GET https://culture.xianzanwl.com/dm/device/fault-records
+ * 接口ID: 396665216
+ */
+export interface FaultRecordsResponse {
+    code: number;
+    msg: string;
+    data: FaultRecordPageData;
+    trackId?: string;
+}
+
+/**
+ * 获取故障记录接口
+ * @param deviceCode 设备编码（必填）
+ * @param page 页码（可选）
+ * @param size 每页数量（可选）
+ * @returns Promise<FaultRecordsResponse> 返回故障记录列表
+ */
+export const getFaultRecords = (deviceCode: string, page?: number, size?: number): Promise<FaultRecordsResponse> => {
+    const params: { deviceCode: string; page?: number; size?: number } = { deviceCode };
+    if (page !== undefined) params.page = page;
+    if (size !== undefined) params.size = size;
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/device/fault-records',
+        method: 'get',
+        params
     });
 };

@@ -16,10 +16,6 @@
                         <span class="link">收支明细 >></span>
                     </div>
                 </div>
-                <div class="account-actions">
-                    <button class="btn-primary">提现</button>
-                    <button class="btn-outline">提现记录</button>
-                </div>
             </div>
 
             <!-- 实时营收区块 -->

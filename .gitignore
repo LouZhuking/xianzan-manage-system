@@ -21,3 +21,12 @@ pnpm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+.kiro/specs/sidebar-nested-navigation/tasks.md
+.kiro/specs/sidebar-nested-navigation/requirements.md
+.kiro/specs/sidebar-nested-navigation/design.md
+.kiro/specs/device-part-status/tasks.md
+.kiro/specs/device-part-status/requirements.md
+.kiro/specs/device-part-status/design.md
+.kiro/specs/device-detail-data-binding/tasks.md
+.kiro/specs/device-detail-data-binding/design.md
+.kiro/specs/device-detail-data-binding/requirements.md

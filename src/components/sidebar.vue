@@ -1,32 +1,67 @@
 <template>
     <div class="sidebar">
-        <!-- 管理员视图：供应商列表 -->
-        <div v-if="isAdmin" class="supplier-list">
+        <!-- 管理员视图：二级导航 -->
+        <div v-if="isAdmin" class="nested-nav">
             <!-- 加载状态 -->
             <div v-if="loading" class="loading-wrapper">
                 <el-icon class="is-loading"><Loading /></el-icon>
                 <span>加载中...</span>
             </div>
             <template v-else>
+                <!-- 供应商总览 -->
                 <div 
-                    v-for="(item, index) in supplierList" 
-                    :key="item.id"
-                    :class="['supplier-item', { 'is-active': index === activeSupplierIndex }]"
-                    @click="handleSupplierClick(index)"
+                    :class="['nav-item', 'overview-item', { 'is-active': isOverviewActive }]"
+                    @click="handleOverviewClick"
                 >
-                    <!-- 左侧金色装饰条（仅选中项显示） -->
-                    <div v-if="index === activeSupplierIndex" class="sidebar-border"></div>
-                    
-                    <!-- 图标 -->
-                    <el-icon class="supplier-icon">
+                    <div v-if="isOverviewActive" class="sidebar-border"></div>
+                    <el-icon class="nav-icon">
                         <Document />
                     </el-icon>
-                    
-                    <!-- 供应商名称 -->
-                    <span class="supplier-name">{{ item.name }}</span>
-                    
-                    <!-- 徽章（显示设备数量） -->
-                    <span v-if="item.badge" class="supplier-badge">{{ item.badge }}</span>
+                    <span class="nav-name">供应商总览</span>
+                </div>
+
+                <!-- 供应商列表（可展开） -->
+                <div 
+                    v-for="supplier in sidebarStore.supplierList" 
+                    :key="supplier.id"
+                    class="supplier-group"
+                >
+                    <!-- 供应商父项 -->
+                    <div 
+                        :class="['nav-item', 'supplier-parent', { 'is-expanded': isExpanded(supplier.id), 'is-active': isSupplierActive(supplier.id) }]"
+                        @click="handleSupplierToggle(supplier.id)"
+                    >
+                        <!-- 左侧金色装饰条（仅选中项显示） -->
+                        <div v-if="isSupplierActive(supplier.id)" class="sidebar-border"></div>
+                        <!-- 展开/折叠图标 -->
+                        <el-icon class="expand-icon">
+                            <ArrowDown v-if="isExpanded(supplier.id)" />
+                            <ArrowRight v-else />
+                        </el-icon>
+                        <span class="nav-name">{{ supplier.name }}</span>
+                        <span v-if="supplier.badge" class="supplier-badge">{{ supplier.badge }}</span>
+                    </div>
+
+                    <!-- 设备子列表 -->
+                    <div v-show="isExpanded(supplier.id)" class="device-children">
+                        <div 
+                            v-for="device in supplier.devices" 
+                            :key="device.id"
+                            :class="['nav-item', 'device-child', { 'is-active': isDeviceActive(device.id) }]"
+                            @click="handleDeviceClick(device, supplier.id)"
+                        >
+                            <div v-if="isDeviceActive(device.id)" class="sidebar-border"></div>
+                            <el-icon class="device-icon">
+                                <Monitor />
+                            </el-icon>
+                            <span class="device-name">{{ device.name }}</span>
+                            <span :class="['device-status', device.status]"></span>
+                        </div>
+                        <!-- 无设备提示 -->
+                        <div v-if="!supplier.devices || supplier.devices.length === 0" class="no-device">
+                            暂无设备
+                        </div>
+                    </div>
                 </div>
             </template>
         </div>
@@ -53,7 +88,7 @@
                     v-for="(device, index) in deviceList" 
                     :key="device.id"
                     :class="['device-item', { 'is-active': index === activeDeviceIndex }]"
-                    @click="handleDeviceClick(index, device)"
+                    @click="handleSupplierDeviceClick(index, device)"
                 >
                     <!-- 左侧金色装饰条（仅选中项显示） -->
                     <div v-if="index === activeDeviceIndex" class="sidebar-border"></div>
@@ -76,7 +111,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
-import { Document, Monitor, OfficeBuilding, Loading } from '@element-plus/icons-vue';
+import { Document, Monitor, OfficeBuilding, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue';
 import { useSidebarStore, type DeviceInfo, type SupplierInfo } from '@/store/sidebar';
 import { usePermissStore } from '@/store/permiss';
 
@@ -86,29 +121,61 @@ const permissStore = usePermissStore();
 // 判断是否为管理员（使用permiss store的角色判断）
 const isAdmin = computed(() => permissStore.isAdmin);
 
-// ========== 管理员视图数据 ==========
-// 供应商列表（从store获取）
-const supplierList = computed(() => {
-    // 在列表前添加"供应商总览"选项
-    const overview = { id: 0, name: '供应商总览', badge: null, devices: [] };
-    return [overview, ...sidebarStore.supplierList];
-});
-
 // 数据加载状态
 const loading = computed(() => sidebarStore.loading);
 
-// 当前选中的供应商索引
-const activeSupplierIndex = computed(() => sidebarStore.activeSupplier?.index ?? null);
+// ========== 管理员视图：二级导航 ==========
+// 是否选中供应商总览
+const isOverviewActive = computed(() => {
+    return sidebarStore.activeSupplier?.index === 0 && !sidebarStore.activeDevice;
+});
 
-// 处理供应商点击事件
-const handleSupplierClick = (index: number) => {
-    const supplier = supplierList.value[index];
-    sidebarStore.setActiveSupplier(index, supplier.name);
+// 检查供应商是否展开
+const isExpanded = (supplierId: number): boolean => {
+    return sidebarStore.isSupplierExpanded(supplierId);
+};
+
+// 检查供应商是否选中（当前激活）
+const isSupplierActive = (supplierId: number): boolean => {
+    // 当前供应商信息的ID与传入的ID匹配，且没有选中设备
+    return sidebarStore.currentSupplierInfo?.id === supplierId && !sidebarStore.activeDevice;
+};
+
+// 检查设备是否选中
+const isDeviceActive = (deviceId: string): boolean => {
+    return sidebarStore.activeDevice?.id === deviceId;
+};
+
+// 处理供应商总览点击
+const handleOverviewClick = () => {
+    sidebarStore.setActiveSupplier(0, '供应商总览');
+    sidebarStore.activeDevice = null;
+};
+
+// 处理供应商展开/折叠（同时选中该供应商）
+const handleSupplierToggle = (supplierId: number) => {
+    // 切换展开状态
+    sidebarStore.toggleSupplierExpand(supplierId);
     
-    // 如果点击的不是"供应商总览"，可以设置当前供应商信息
-    if (index > 0) {
+    // 找到供应商在列表中的索引（+1 因为索引0是"供应商总览"）
+    const supplierIndex = sidebarStore.supplierList.findIndex(s => s.id === supplierId);
+    if (supplierIndex !== -1) {
+        const supplier = sidebarStore.supplierList[supplierIndex];
+        // 设置当前选中的供应商（索引+1因为0是总览）
+        sidebarStore.setActiveSupplier(supplierIndex + 1, supplier.name);
+        // 设置当前供应商信息，用于右侧页面显示
         sidebarStore.setCurrentSupplierInfo(supplier);
+        // 清除设备选中状态
+        sidebarStore.activeDevice = null;
     }
+};
+
+// 处理设备点击
+const handleDeviceClick = (device: DeviceInfo, supplierId: number) => {
+    // 找到设备在列表中的索引
+    const supplier = sidebarStore.supplierList.find(s => s.id === supplierId);
+    const deviceIndex = supplier?.devices?.findIndex(d => d.id === device.id) ?? 0;
+    sidebarStore.setActiveDevice(deviceIndex, device.id, device.name);
 };
 
 // ========== 供应商视图数据 ==========
@@ -123,8 +190,8 @@ const deviceList = computed(() => sidebarStore.deviceList);
 // 当前选中的设备索引
 const activeDeviceIndex = computed(() => sidebarStore.activeDevice?.index ?? null);
 
-// 处理设备点击事件
-const handleDeviceClick = (index: number, device: DeviceInfo) => {
+// 处理供应商视图的设备点击事件
+const handleSupplierDeviceClick = (index: number, device: DeviceInfo) => {
     sidebarStore.setActiveDevice(index, device.id, device.name);
 };
 
@@ -135,7 +202,12 @@ const initData = async () => {
     console.log('获取到的供应商列表:', list);
     console.log('是否为管理员:', isAdmin.value);
     
-    if (!isAdmin.value && list.length > 0) {
+    if (isAdmin.value) {
+        // 管理员：默认选中供应商总览
+        if (!sidebarStore.activeSupplier) {
+            sidebarStore.setActiveSupplier(0, '供应商总览');
+        }
+    } else if (list.length > 0) {
         // 非管理员：根据dealerId匹配当前用户的供应商
         const userDealerId = localStorage.getItem('vuems_dealerId');
         console.log('用户dealerId:', userDealerId);
@@ -144,11 +216,9 @@ const initData = async () => {
             if (userSupplier) {
                 sidebarStore.setCurrentSupplierInfo(userSupplier);
             } else {
-                // 如果没找到匹配的，使用第一个
                 sidebarStore.setCurrentSupplierInfo(list[0]);
             }
         } else {
-            // 没有dealerId，使用第一个供应商
             sidebarStore.setCurrentSupplierInfo(list[0]);
         }
     }
@@ -186,54 +256,95 @@ onMounted(() => {
     border-radius: 0 2px 2px 0;
 }
 
-/* 供应商列表容器 */
-.supplier-list {
+/* ========== 二级导航样式 ========== */
+.nested-nav {
     padding: 8px 0;
 }
 
-/* 供应商列表项 */
-.supplier-item {
+/* 通用导航项样式 */
+.nav-item {
     display: flex;
     align-items: center;
-    padding: 12px 20px;
+    padding: 12px 16px;
     margin: 2px 0;
     cursor: pointer;
     transition: background-color 0.3s;
     position: relative;
 }
 
-/* 普通项 hover 效果 */
-.supplier-item:hover {
+.nav-item:hover {
     background-color: #f5f5f5;
 }
 
-/* 第一项（供应商总览）的特殊样式 */
-.supplier-item.is-active {
+.nav-item.is-active {
     background-color: #FFF7E6;
 }
 
-.supplier-item.is-active:hover {
+.nav-item.is-active:hover {
     background-color: #FFF7E6;
 }
 
-/* 图标样式 */
-.supplier-icon {
+/* 导航图标 */
+.nav-icon {
     font-size: 18px;
     color: #999;
     margin-right: 12px;
     flex-shrink: 0;
 }
 
-/* 第一项图标为金色 */
-.supplier-item.is-active .supplier-icon {
+.nav-item.is-active .nav-icon {
     color: #D4AF37;
 }
 
-/* 供应商名称 */
-.supplier-name {
+/* 导航名称 */
+.nav-name {
     flex: 1;
     font-size: 14px;
     color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 供应商总览项 */
+.overview-item {
+    border-bottom: 1px solid #f0f0f0;
+    margin-bottom: 4px;
+}
+
+/* 供应商父项 */
+.supplier-parent {
+    padding-left: 12px;
+}
+
+.supplier-parent.is-expanded {
+    background-color: #fafafa;
+}
+
+.supplier-parent.is-active {
+    background-color: #FFF7E6;
+}
+
+.supplier-parent.is-active .expand-icon {
+    color: #D4AF37;
+}
+
+.supplier-parent.is-active .nav-name {
+    color: #333;
+    font-weight: 500;
+}
+
+/* 展开/折叠图标 */
+.expand-icon {
+    font-size: 12px;
+    color: #999;
+    margin-right: 8px;
+    flex-shrink: 0;
+    transition: transform 0.3s;
+}
+
+.supplier-parent.is-expanded .expand-icon {
+    color: #D4AF37;
 }
 
 /* 徽章样式 */
@@ -249,6 +360,46 @@ onMounted(() => {
     font-size: 12px;
     border-radius: 10px;
     font-weight: 500;
+}
+
+/* 设备子列表容器 */
+.device-children {
+    background-color: #fafafa;
+}
+
+/* 设备子项 */
+.device-child {
+    padding-left: 36px;
+    padding-right: 16px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.device-child .device-icon {
+    font-size: 16px;
+    color: #bbb;
+    margin-right: 10px;
+}
+
+.device-child.is-active .device-icon {
+    color: #D4AF37;
+}
+
+.device-child .device-name {
+    font-size: 13px;
+    color: #666;
+}
+
+.device-child.is-active .device-name {
+    color: #333;
+    font-weight: 500;
+}
+
+/* 无设备提示 */
+.no-device {
+    padding: 12px 36px;
+    font-size: 12px;
+    color: #999;
 }
 
 /* ========== 供应商视图样式 ========== */
@@ -307,8 +458,8 @@ onMounted(() => {
     background-color: #FFF7E6;
 }
 
-/* 设备图标样式 */
-.device-icon {
+/* 设备图标样式 - 供应商视图 */
+.device-list .device-icon {
     font-size: 18px;
     color: #999;
     margin-right: 12px;
@@ -320,8 +471,8 @@ onMounted(() => {
     color: #D4AF37;
 }
 
-/* 设备名称 */
-.device-name {
+/* 设备名称 - 供应商视图 */
+.device-list .device-name {
     flex: 1;
     font-size: 14px;
     color: #333;

@@ -48,6 +48,16 @@ const transformDealerData = (dealer: DealerItem): SupplierInfo => {
 	};
 };
 
+// 从 sessionStorage 恢复展开状态
+const getStoredExpandedSuppliers = (): number[] => {
+	try {
+		const stored = sessionStorage.getItem('sidebar_expanded');
+		return stored ? JSON.parse(stored) : [];
+	} catch {
+		return [];
+	}
+};
+
 export const useSidebarStore = defineStore('sidebar', {
 	state: () => {
 		return {
@@ -63,7 +73,9 @@ export const useSidebarStore = defineStore('sidebar', {
 			// 供应商列表（管理员视图使用）
 			supplierList: [] as SupplierInfo[],
 			// 数据加载状态
-			loading: false
+			loading: false,
+			// 已展开的供应商ID列表（二级导航使用，从 sessionStorage 恢复）
+			expandedSuppliers: getStoredExpandedSuppliers()
 		};
 	},
 	getters: {
@@ -107,6 +119,33 @@ export const useSidebarStore = defineStore('sidebar', {
 			this.currentSupplierInfo = null;
 			this.activeDevice = null;
 			this.supplierList = [];
+			this.expandedSuppliers = [];
+		},
+		// 切换供应商展开状态
+		toggleSupplierExpand(supplierId: number) {
+			const index = this.expandedSuppliers.indexOf(supplierId);
+			if (index === -1) {
+				this.expandedSuppliers.push(supplierId);
+			} else {
+				this.expandedSuppliers.splice(index, 1);
+			}
+			// 保存到 sessionStorage
+			sessionStorage.setItem('sidebar_expanded', JSON.stringify(this.expandedSuppliers));
+		},
+		// 设置供应商展开状态
+		setSupplierExpanded(supplierId: number, expanded: boolean) {
+			const index = this.expandedSuppliers.indexOf(supplierId);
+			if (expanded && index === -1) {
+				this.expandedSuppliers.push(supplierId);
+			} else if (!expanded && index !== -1) {
+				this.expandedSuppliers.splice(index, 1);
+			}
+			// 保存到 sessionStorage
+			sessionStorage.setItem('sidebar_expanded', JSON.stringify(this.expandedSuppliers));
+		},
+		// 检查供应商是否展开
+		isSupplierExpanded(supplierId: number): boolean {
+			return this.expandedSuppliers.includes(supplierId);
 		},
 		// 从API获取供应商设备列表
 		async fetchDealerDeviceList() {

@@ -168,7 +168,7 @@
                         </el-tag>
                     </div>
                 </div>
-                <el-table :data="faultRecords" border class="record-table" header-cell-class-name="table-header">
+                <el-table :data="filteredFaultRecords" border class="record-table" header-cell-class-name="table-header">
                     <el-table-column prop="time" label="故障时间" align="center" width="150"></el-table-column>
                     <el-table-column prop="type" label="故障类型" align="center">
                         <template #default="scope">
@@ -197,6 +197,9 @@
             <div class="record-card">
                 <div class="record-header">
                     <span class="record-title">维护记录</span>
+                    <el-button type="primary" size="small" @click="showMaintenanceForm = true">
+                        <el-icon><Plus /></el-icon>添加
+                    </el-button>
                 </div>
                 <div class="record-filter">
                     <span class="filter-label">维护类型 <el-icon class="info-icon"><QuestionFilled /></el-icon></span>
@@ -233,64 +236,385 @@
                 </el-table>
             </div>
         </div>
+
+        <!-- 添加维护记录弹窗 -->
+        <el-dialog
+            v-model="showMaintenanceForm"
+            title="添加维护记录"
+            width="500px"
+            :close-on-click-modal="false"
+        >
+            <el-form
+                ref="maintenanceFormRef"
+                :model="maintenanceForm"
+                :rules="maintenanceRules"
+                label-width="100px"
+            >
+                <el-form-item label="设备ID" prop="deviceId">
+                    <el-input v-model="maintenanceForm.deviceId" placeholder="请输入设备ID" disabled />
+                </el-form-item>
+                <el-form-item label="维护类型" prop="type">
+                    <el-select v-model="maintenanceForm.type" placeholder="请选择维护类型" style="width: 100%">
+                        <el-option label="刀头" value="刀头" />
+                        <el-option label="色带" value="色带" />
+                        <el-option label="纸张" value="纸张" />
+                    </el-select>
+                </el-form-item>
+                <el-form-item label="备注" prop="remark">
+                    <el-input
+                        v-model="maintenanceForm.remark"
+                        type="textarea"
+                        :rows="3"
+                        placeholder="请输入备注信息"
+                    />
+                </el-form-item>
+                <el-form-item label="处理结果" prop="result">
+                    <el-select v-model="maintenanceForm.result" placeholder="请选择处理结果" style="width: 100%">
+                        <el-option label="已处理" value="已处理" />
+                        <el-option label="未处理" value="未处理" />
+                    </el-select>
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="showMaintenanceForm = false">取消</el-button>
+                <el-button type="primary" @click="submitMaintenanceForm">确定</el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
-import { QuestionFilled, Edit } from '@element-plus/icons-vue';
+import { ref, reactive, watch, onMounted, computed } from 'vue';
+import { QuestionFilled, Edit, Plus } from '@element-plus/icons-vue';
+import type { FormInstance, FormRules } from 'element-plus';
+import { useSidebarStore } from '@/store/sidebar';
+import { getDeviceStatus, getFaultRecords, type FaultRecordItem } from '@/api/index';
 
 defineOptions({
     name: 'device-status-detail'
 });
 
+// ========== Store ==========
+const sidebarStore = useSidebarStore();
+
+// ========== 类型定义 ==========
+interface PartItem {
+    partId: number;
+    partName: string;
+    partNum: number;
+    partTotal: number;
+    partStatus: string;
+}
+
+interface ConsumableItem {
+    current: number;
+    total: number;
+    percent: number;
+    needReplace: boolean;
+}
+
+// ========== 数据解析工具函数 ==========
+
+/**
+ * 从 partList 中获取指定部件的数据
+ * @param partList 部件列表
+ * @param partName 部件名称
+ * @returns 部件数据或 null
+ */
+const getPartData = (partList: PartItem[] | null | undefined, partName: string): PartItem | null => {
+    if (!partList || partList.length === 0) {
+        return null;
+    }
+    return partList.find(p => p.partName === partName) || null;
+};
+
+/**
+ * 解析设备运行状态
+ * @param networkSignal 网络信号值 0-4
+ * @returns 'running' | 'offline'
+ */
+const parseRunningStatus = (networkSignal: number): 'running' | 'offline' => {
+    return networkSignal >= 2 ? 'running' : 'offline';
+};
+
+/**
+ * 解析组件状态文本
+ * @param partStatus 部件状态 '正常' | '故障'
+ * @returns { status: string, text: string }
+ */
+const parseComponentStatusText = (partStatus: string | null | undefined): { status: 'normal' | 'pending'; text: string } => {
+    if (partStatus === '故障') {
+        return { status: 'pending', text: '待处理故障' };
+    }
+    return { status: 'normal', text: '状态: 正常' };
+};
+
+/**
+ * 计算耗材百分比和是否需要更换
+ * @param current 当前值
+ * @param total 总值
+ * @returns ConsumableItem
+ */
+const calculateConsumable = (current: number, total: number): ConsumableItem => {
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+    return {
+        current,
+        total,
+        percent,
+        needReplace: percent >= 75
+    };
+};
+
+// ========== 响应式数据 ==========
+
+// 加载状态
+const loading = ref(false);
+
 // 设备基本信息
 const deviceInfo = reactive({
-    deviceId: 'WOA00001',
-    status: 'running', // running | offline
-    signalStrength: 4,
-    faultCount: 2,
-    maintenanceCount: 2
+    deviceId: '-',
+    status: 'offline' as 'running' | 'offline',
+    signalStrength: 0,
+    faultCount: 0,
+    maintenanceCount: 0
 });
 
 // 组件状态
 const componentStatus = reactive({
-    camera: { status: 'pending', text: '待处理故障' },
-    cutter: { status: 'normal', text: '状态: 正常' },
-    camera2: { status: 'pending', text: '待处理故障' },
-    printer: { status: 'normal', text: '状态: 正常' }
+    camera: { status: 'normal' as 'normal' | 'pending', text: '状态: 正常' },
+    cutter: { status: 'normal' as 'normal' | 'pending', text: '状态: 正常' },
+    camera2: { status: 'normal' as 'normal' | 'pending', text: '状态: 正常' },
+    printer: { status: 'normal' as 'normal' | 'pending', text: '状态: 正常' }
 });
 
 // 耗材状态
 const consumables = reactive({
-    blade: { current: 6000, total: 8000, percent: 75, needReplace: true },
-    ribbon: { current: 380, total: 400, percent: 95, needReplace: true },
-    paper: { current: 100, total: 400, percent: 25, needReplace: false }
+    blade: { current: 0, total: 0, percent: 0, needReplace: false } as ConsumableItem,
+    ribbon: { current: 0, total: 0, percent: 0, needReplace: false } as ConsumableItem,
+    paper: { current: 0, total: 0, percent: 0, needReplace: false } as ConsumableItem
 });
 
 // 设备详情信息
 const deviceDetail = reactive({
-    deviceId: 'XXXXXX',
-    deviceName: 'WOA00001',
-    softwareVersion: 'V-11.32.69',
-    address: 'XXXXXXXXXXXXXXXXXXXXXXXX',
-    hardwareSerial: 'fgioaetqietjqfgioaetqietjqfj',
-    hardwareVersion: 'H-01.22.35b',
-    network: '中国联通',
-    historyTraffic: '5352.218MB',
-    monthTraffic: '253.342MB'
+    deviceId: '-',
+    deviceName: '-',
+    softwareVersion: '-',
+    address: '-',
+    hardwareSerial: '-',
+    hardwareVersion: '-',
+    network: '-',
+    historyTraffic: '-',
+    monthTraffic: '-'
 });
 
-// 故障记录筛选标签
-const faultFilterTags = ref([
-    { key: 'all', label: '全部' },
-    { key: 'network', label: '网络信号' },
-    { key: 'camera', label: '摄像头' },
-    { key: 'display', label: '显示屏' },
-    { key: 'cutter', label: '膜切机' },
-    { key: 'printer', label: '打印机' }
-]);
+// ========== 数据重置函数 ==========
+
+/**
+ * 将所有响应式数据重置为初始默认值
+ */
+const resetToDefaults = () => {
+    // 重置设备基本信息
+    deviceInfo.deviceId = '-';
+    deviceInfo.status = 'offline';
+    deviceInfo.signalStrength = 0;
+    deviceInfo.faultCount = 0;
+    deviceInfo.maintenanceCount = 0;
+
+    // 重置组件状态
+    const defaultComponentStatus = { status: 'normal' as const, text: '状态: 正常' };
+    componentStatus.camera = { ...defaultComponentStatus };
+    componentStatus.cutter = { ...defaultComponentStatus };
+    componentStatus.camera2 = { ...defaultComponentStatus };
+    componentStatus.printer = { ...defaultComponentStatus };
+
+    // 重置耗材状态
+    const defaultConsumable = { current: 0, total: 0, percent: 0, needReplace: false };
+    consumables.blade = { ...defaultConsumable };
+    consumables.ribbon = { ...defaultConsumable };
+    consumables.paper = { ...defaultConsumable };
+
+    // 重置设备详情
+    deviceDetail.deviceId = '-';
+    deviceDetail.deviceName = '-';
+    deviceDetail.softwareVersion = '-';
+    deviceDetail.address = '-';
+    deviceDetail.hardwareSerial = '-';
+    deviceDetail.hardwareVersion = '-';
+    deviceDetail.network = '-';
+    deviceDetail.historyTraffic = '-';
+    deviceDetail.monthTraffic = '-';
+    
+    // 重置故障记录
+    faultRecords.value = [];
+};
+
+// ========== 数据获取函数 ==========
+
+/**
+ * 根据设备ID获取deviceCode
+ * @param deviceId 设备ID
+ * @returns deviceCode 或 null
+ */
+const getDeviceCode = (deviceId: string): string | null => {
+    // 从 deviceList 中查找
+    const device = sidebarStore.deviceList.find(d => d.id === deviceId);
+    if (device) {
+        return device.deviceCode;
+    }
+    // 从 supplierList 中查找
+    for (const supplier of sidebarStore.supplierList) {
+        const found = supplier.devices?.find(d => d.id === deviceId);
+        if (found) {
+            return found.deviceCode;
+        }
+    }
+    return null;
+};
+
+/**
+ * 获取设备数据
+ * @param deviceCode 设备编码
+ */
+const fetchDeviceData = async (deviceCode: string) => {
+    loading.value = true;
+    try {
+        const res = await getDeviceStatus(deviceCode);
+        console.log('设备详情API响应:', res);
+
+        if (res.code === 200 && res.data) {
+            const data = res.data;
+            const partList = data.partList || [];
+
+            // 更新设备基本信息
+            const networkPart = getPartData(partList, '网络信号');
+            const signalStrength = networkPart?.partNum ?? 0;
+            
+            deviceInfo.deviceId = data.deviceName || deviceCode;
+            deviceInfo.status = parseRunningStatus(signalStrength);
+            deviceInfo.signalStrength = signalStrength;
+            
+            // 计算故障数量（状态为"故障"的部件数量）
+            const faultCount = partList.filter(p => p.partStatus === '故障').length;
+            deviceInfo.faultCount = faultCount;
+            
+            // 计算维护数量（耗材使用率>=75%的数量）
+            let maintenanceCount = 0;
+            const bladePart = getPartData(partList, '刀头');
+            const ribbonPart = getPartData(partList, '色带');
+            const paperPart = getPartData(partList, '剩余纸张');
+            
+            if (bladePart && bladePart.partTotal > 0 && (bladePart.partNum / bladePart.partTotal) >= 0.75) maintenanceCount++;
+            if (ribbonPart && ribbonPart.partTotal > 0 && (ribbonPart.partNum / ribbonPart.partTotal) >= 0.75) maintenanceCount++;
+            if (paperPart && paperPart.partTotal > 0 && (paperPart.partNum / paperPart.partTotal) >= 0.75) maintenanceCount++;
+            deviceInfo.maintenanceCount = maintenanceCount;
+
+            // 更新组件状态
+            const cameraPart = getPartData(partList, '摄像头');
+            const cutterPart = getPartData(partList, '膜切机');
+            const printerPart = getPartData(partList, '打印机');
+            const displayPart = getPartData(partList, '显示屏');
+
+            componentStatus.camera = parseComponentStatusText(cameraPart?.partStatus);
+            componentStatus.cutter = parseComponentStatusText(cutterPart?.partStatus);
+            componentStatus.camera2 = parseComponentStatusText(displayPart?.partStatus); // 第二个摄像头位置显示显示屏状态
+            componentStatus.printer = parseComponentStatusText(printerPart?.partStatus);
+
+            // 更新耗材状态
+            consumables.blade = calculateConsumable(bladePart?.partNum ?? 0, bladePart?.partTotal ?? 0);
+            consumables.ribbon = calculateConsumable(ribbonPart?.partNum ?? 0, ribbonPart?.partTotal ?? 0);
+            consumables.paper = calculateConsumable(paperPart?.partNum ?? 0, paperPart?.partTotal ?? 0);
+
+            // 更新设备详情
+            deviceDetail.deviceId = deviceCode;
+            deviceDetail.deviceName = data.deviceName || '-';
+            deviceDetail.softwareVersion = (data as any).softwareVersion || 'V-11.32.69';
+            deviceDetail.address = (data as any).deviceAddress || '-';
+            deviceDetail.hardwareSerial = (data as any).hardwareSerial || '-';
+            deviceDetail.hardwareVersion = (data as any).hardwareVersion || 'H-01.22.35b';
+            deviceDetail.network = (data as any).network || '中国联通';
+            deviceDetail.historyTraffic = (data as any).historyTraffic || '-';
+            deviceDetail.monthTraffic = (data as any).monthTraffic || '-';
+
+            console.log('设备数据更新完成:', { deviceInfo, componentStatus, consumables, deviceDetail });
+            
+            // 获取故障记录
+            fetchFaultRecords(deviceCode);
+        } else {
+            console.error('获取设备数据失败:', res.msg);
+            resetToDefaults();
+        }
+    } catch (error) {
+        console.error('获取设备数据异常:', error);
+        resetToDefaults();
+    } finally {
+        loading.value = false;
+    }
+};
+
+// ========== 监听设备切换 ==========
+
+watch(() => sidebarStore.activeDevice, (newDevice) => {
+    console.log('activeDevice 变化:', newDevice);
+    if (newDevice) {
+        const deviceCode = getDeviceCode(newDevice.id);
+        console.log('获取到 deviceCode:', deviceCode);
+        if (deviceCode) {
+            fetchDeviceData(deviceCode);
+        } else {
+            // 尝试直接使用 id 作为 deviceCode
+            fetchDeviceData(newDevice.id);
+        }
+    } else {
+        resetToDefaults();
+    }
+}, { immediate: true });
+
+// ========== 生命周期 ==========
+
+onMounted(() => {
+    // 如果已有选中的设备，立即获取数据
+    if (sidebarStore.activeDevice) {
+        const deviceCode = getDeviceCode(sidebarStore.activeDevice.id);
+        if (deviceCode) {
+            fetchDeviceData(deviceCode);
+        }
+    }
+});
+
+// ========== 故障记录和维护记录 ==========
+
+// 当前选中的故障类型筛选
 const activeFaultFilter = ref('all');
+
+// 动态生成故障类型筛选标签（根据API返回的故障记录中的partName去重）
+const faultFilterTags = computed(() => {
+    // 固定的"全部"标签
+    const tags: Array<{ key: string; label: string }> = [{ key: 'all', label: '全部' }];
+    
+    // 从故障记录中提取唯一的故障类型
+    const uniqueTypes = new Set<string>();
+    faultRecords.value.forEach(record => {
+        if (record.type && record.type !== '-') {
+            uniqueTypes.add(record.type);
+        }
+    });
+    
+    // 将唯一类型转换为标签格式
+    uniqueTypes.forEach(type => {
+        tags.push({ key: type, label: type });
+    });
+    
+    return tags;
+});
+
+// 根据筛选条件过滤后的故障记录
+const filteredFaultRecords = computed(() => {
+    if (activeFaultFilter.value === 'all') {
+        return faultRecords.value;
+    }
+    // 直接使用选中的key作为类型进行筛选（因为key就是partName）
+    return faultRecords.value.filter(record => record.type === activeFaultFilter.value);
+});
 
 // 维护记录筛选标签
 const maintenanceFilterTags = ref([
@@ -301,19 +625,43 @@ const maintenanceFilterTags = ref([
 ]);
 const activeMaintenanceFilter = ref('all');
 
-// 故障记录数据
-const faultRecords = ref([
-    { time: '2024-06-27 12:16', type: '网络信号', status: '未修复', repairTime: '' },
-    { time: '2024-06-26 12:16', type: '摄像头', status: '已修复', repairTime: '2024-06-28 12:16' },
-    { time: '2024-06-26 12:16', type: '显示屏', status: '已修复', repairTime: '2024-06-28 12:16' },
-    { time: '2024-06-25 11:16', type: '膜切机', status: '已修复', repairTime: '2024-06-28 12:16' },
-    { time: '2024-06-23 12:16', type: '网络信号', status: '已修复', repairTime: '2024-06-28 12:16' },
-    { time: '2024-06-21 12:16', type: '网络信号', status: '未修复', repairTime: '' },
-    { time: '2024-06-21 11:16', type: '膜切机', status: '已修复', repairTime: '2024-06-28 12:16' },
-    { time: '2024-06-21 12:16', type: '网络信号', status: '已修复', repairTime: '2024-06-28 12:16' }
-]);
+// 故障记录数据（从API获取）
+const faultRecords = ref<Array<{
+    time: string;
+    type: string;
+    status: string;
+    repairTime: string;
+}>>([]);
 
-// 维护记录数据
+/**
+ * 获取故障记录数据
+ * @param deviceCode 设备编码
+ */
+const fetchFaultRecords = async (deviceCode: string) => {
+    try {
+        const res = await getFaultRecords(deviceCode);
+        console.log('故障记录API响应:', res);
+        
+        if (res.code === 200 && res.data && res.data.list) {
+            // 转换API数据格式为表格显示格式
+            // downTime->故障时间，partName->故障类型，partStatus->状态，repairTime->修复时间
+            faultRecords.value = res.data.list.map((item: FaultRecordItem) => ({
+                time: item.downTime || '-',
+                type: item.partName || '-',
+                status: item.partStatus === '正常' ? '已修复' : '未修复',
+                repairTime: item.repairTime || '-'
+            }));
+        } else {
+            console.error('获取故障记录失败:', res.msg);
+            faultRecords.value = [];
+        }
+    } catch (error) {
+        console.error('获取故障记录异常:', error);
+        faultRecords.value = [];
+    }
+};
+
+// 维护记录数据（暂时使用静态数据，后续可接入API）
 const maintenanceRecords = ref([
     { time: '2024-06-27 12:16', type: '刀头', usage: '6000/8000(75%)', remark: '使用接近设计寿命', result: '已处理' },
     { time: '2024-06-27 12:16', type: '色带', usage: '380/400(95%)', remark: '色带不足，请及时更换', result: '未处理' },
@@ -324,6 +672,61 @@ const maintenanceRecords = ref([
     { time: '2024-06-27 12:16', type: '色带', usage: '380/400(95%)', remark: '色带不足，请及时更换', result: '未处理' },
     { time: '2024-06-28 12:16', type: '纸张', usage: '380/400(95%)', remark: '纸张不足，请及时更换', result: '已处理' }
 ]);
+
+// ========== 添加维护记录表单 ==========
+const showMaintenanceForm = ref(false);
+const maintenanceFormRef = ref<FormInstance>();
+
+const maintenanceForm = reactive({
+    deviceId: '',
+    type: '',
+    remark: '',
+    result: ''
+});
+
+const maintenanceRules: FormRules = {
+    deviceId: [{ required: true, message: '设备ID不能为空', trigger: 'blur' }],
+    type: [{ required: true, message: '请选择维护类型', trigger: 'change' }],
+    remark: [{ required: true, message: '请输入备注信息', trigger: 'blur' }],
+    result: [{ required: true, message: '请选择处理结果', trigger: 'change' }]
+};
+
+// 监听弹窗打开，自动填充设备ID
+watch(showMaintenanceForm, (val) => {
+    if (val) {
+        maintenanceForm.deviceId = deviceDetail.deviceId;
+    } else {
+        // 关闭时重置表单
+        maintenanceForm.type = '';
+        maintenanceForm.remark = '';
+        maintenanceForm.result = '';
+        maintenanceFormRef.value?.resetFields();
+    }
+});
+
+// 提交维护记录表单
+const submitMaintenanceForm = async () => {
+    if (!maintenanceFormRef.value) return;
+    
+    await maintenanceFormRef.value.validate((valid) => {
+        if (valid) {
+            // 生成当前时间
+            const now = new Date();
+            const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+            
+            // 添加到维护记录列表
+            maintenanceRecords.value.unshift({
+                time: timeStr,
+                type: maintenanceForm.type,
+                usage: '-',
+                remark: maintenanceForm.remark,
+                result: maintenanceForm.result
+            });
+            
+            showMaintenanceForm.value = false;
+        }
+    });
+};
 </script>
 
 <style scoped>
@@ -653,6 +1056,9 @@ const maintenanceRecords = ref([
 
 .record-header {
     margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .record-title {

@@ -1,9 +1,9 @@
 <template>
     <div class="device-manage-wrapper" :key="viewKey">
-        <!-- 经销商视图：设备状态详情 -->
-        <DeviceStatusDetail v-if="isSupplier" />
+        <!-- 设备状态详情视图：经销商视图 或 管理员选中具体设备时显示 -->
+        <DeviceStatusDetail v-if="showDeviceDetail" />
         
-        <!-- 管理员视图：设备管理列表 -->
+        <!-- 管理员视图：设备管理列表（未选中具体设备时显示） -->
         <div v-else class="page-container">
         <!-- 左侧设备概况面板 -->
         <div class="overview-panel">
@@ -239,6 +239,17 @@ const viewKey = ref(0);
 // 判断是否为经销商
 const isSupplier = computed(() => permissStore.isSupplier);
 
+// 判断是否显示设备详情页面
+// 条件：经销商视图 或 管理员选中了具体设备
+const showDeviceDetail = computed(() => {
+    // 经销商始终显示设备详情
+    if (isSupplier.value) {
+        return true;
+    }
+    // 管理员选中了具体设备时显示设备详情
+    return sidebarStore.activeDevice !== null;
+});
+
 // 状态项接口
 interface StatusItem {
     label: string;
@@ -413,14 +424,15 @@ const fetchAllDeviceStatus = async () => {
 
 /**
  * 获取设备概况数据
+ * @param dealerName 供应商名称，不传则获取所有供应商的概况
  */
-const fetchDeviceOverview = async () => {
+const fetchDeviceOverview = async (dealerName?: string) => {
     try {
         // 从 localStorage 获取当前登录用户名
         const userName = localStorage.getItem('vuems_name') || 'admin';
-        console.log('获取设备概况，用户:', userName);
+        console.log('获取设备概况，用户:', userName, '供应商名称:', dealerName);
         
-        const res = await getDeviceOverview(userName);
+        const res = await getDeviceOverview(userName, dealerName);
         console.log('设备概况API响应:', res);
         
         if (res.code === 200 && res.data) {
@@ -572,10 +584,10 @@ const handleResize = () => {
 onMounted(() => {
     // 刷新用户角色，确保与 localStorage 同步
     permissStore.refreshRole();
-    console.log('当前角色:', permissStore.role, 'isSupplier:', isSupplier.value);
+    console.log('当前角色:', permissStore.role, 'isSupplier:', isSupplier.value, 'showDeviceDetail:', showDeviceDetail.value);
     
-    // 只有管理员视图才需要初始化图表和获取概况数据
-    if (!isSupplier.value) {
+    // 只有管理员视图且未选中具体设备时才需要初始化图表和获取概况数据
+    if (!showDeviceDetail.value) {
         // 获取设备概况数据
         fetchDeviceOverview();
         nextTick(() => {
@@ -618,12 +630,39 @@ watch(isSupplier, (newVal, oldVal) => {
     }
 });
 
-// 监听供应商切换，更新图表
-watch(currentSupplierIndex, () => {
-    if (!isSupplier.value && chartInstance) {
+// 监听设备选中状态变化，切换视图
+watch(() => sidebarStore.activeDevice, (newDevice, oldDevice) => {
+    console.log('设备选中状态变化:', oldDevice, '->', newDevice);
+    
+    // 强制重新渲染视图
+    viewKey.value++;
+    
+    // 如果从设备详情返回到列表视图，需要重新初始化图表
+    if (!newDevice && oldDevice && !isSupplier.value) {
         nextTick(() => {
-            updateChart();
+            initChart();
         });
+    }
+});
+
+// 监听供应商切换，更新图表和设备概况
+watch(currentSupplierIndex, (newIndex) => {
+    if (!isSupplier.value) {
+        // 获取当前选中供应商的名称
+        let dealerName: string | undefined;
+        if (newIndex > 0) {
+            // 选中了具体供应商（index-1因为supplierList不包含"供应商总览"）
+            const supplier = sidebarStore.supplierList[newIndex - 1];
+            dealerName = supplier?.name;
+        }
+        // 重新获取设备概况数据
+        fetchDeviceOverview(dealerName);
+        
+        if (chartInstance) {
+            nextTick(() => {
+                updateChart();
+            });
+        }
     }
     // 供应商切换时重新获取设备状态
     fetchAllDeviceStatus();
