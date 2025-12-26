@@ -147,6 +147,11 @@ export const useSidebarStore = defineStore('sidebar', {
 		isSupplierExpanded(supplierId: number): boolean {
 			return this.expandedSuppliers.includes(supplierId);
 		},
+		// 折叠所有展开的供应商
+		collapseAllSuppliers() {
+			this.expandedSuppliers = [];
+			sessionStorage.setItem('sidebar_expanded', JSON.stringify([]));
+		},
 		// 从API获取供应商设备列表
 		async fetchDealerDeviceList() {
 			this.loading = true;

@@ -28,22 +28,22 @@
                 >
                     <!-- 供应商父项 -->
                     <div 
-                        :class="['nav-item', 'supplier-parent', { 'is-expanded': isExpanded(supplier.id), 'is-active': isSupplierActive(supplier.id) }]"
+                        :class="['nav-item', 'supplier-parent', { 'is-expanded': !isSupplierOnlyMode && isExpanded(supplier.id), 'is-active': isSupplierActive(supplier.id) }]"
                         @click="handleSupplierToggle(supplier.id)"
                     >
                         <!-- 左侧金色装饰条（仅选中项显示） -->
                         <div v-if="isSupplierActive(supplier.id)" class="sidebar-border"></div>
-                        <!-- 展开/折叠图标 -->
-                        <el-icon class="expand-icon">
+                        <!-- 展开/折叠图标（仅在完整导航模式下显示） -->
+                        <el-icon v-if="!isSupplierOnlyMode" class="expand-icon">
                             <ArrowDown v-if="isExpanded(supplier.id)" />
                             <ArrowRight v-else />
                         </el-icon>
                         <span class="nav-name">{{ supplier.name }}</span>
-                        <span v-if="supplier.badge" class="supplier-badge">{{ supplier.badge }}</span>
+                        <span v-if="supplier.badge && !isSupplierOnlyMode" class="supplier-badge">{{ supplier.badge }}</span>
                     </div>
 
-                    <!-- 设备子列表 -->
-                    <div v-show="isExpanded(supplier.id)" class="device-children">
+                    <!-- 设备子列表（仅在完整导航模式下显示） -->
+                    <div v-if="!isSupplierOnlyMode" v-show="isExpanded(supplier.id)" class="device-children">
                         <div 
                             v-for="device in supplier.devices" 
                             :key="device.id"
@@ -110,16 +110,26 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { Document, Monitor, OfficeBuilding, Loading, ArrowRight, ArrowDown } from '@element-plus/icons-vue';
 import { useSidebarStore, type DeviceInfo, type SupplierInfo } from '@/store/sidebar';
 import { usePermissStore } from '@/store/permiss';
 
+const route = useRoute();
 const sidebarStore = useSidebarStore();
 const permissStore = usePermissStore();
 
 // 判断是否为管理员（使用permiss store的角色判断）
 const isAdmin = computed(() => permissStore.isAdmin);
+
+// 定义仅供应商模式的路由列表
+const supplierOnlyRoutes = ['/revenue-flow', '/order-system'];
+
+// 计算当前是否为仅供应商模式（管理员 + 特定路由）
+const isSupplierOnlyMode = computed(() => {
+    return isAdmin.value && supplierOnlyRoutes.includes(route.path);
+});
 
 // 数据加载状态
 const loading = computed(() => sidebarStore.loading);
@@ -154,9 +164,6 @@ const handleOverviewClick = () => {
 
 // 处理供应商展开/折叠（同时选中该供应商）
 const handleSupplierToggle = (supplierId: number) => {
-    // 切换展开状态
-    sidebarStore.toggleSupplierExpand(supplierId);
-    
     // 找到供应商在列表中的索引（+1 因为索引0是"供应商总览"）
     const supplierIndex = sidebarStore.supplierList.findIndex(s => s.id === supplierId);
     if (supplierIndex !== -1) {
@@ -167,6 +174,11 @@ const handleSupplierToggle = (supplierId: number) => {
         sidebarStore.setCurrentSupplierInfo(supplier);
         // 清除设备选中状态
         sidebarStore.activeDevice = null;
+        
+        // 仅在完整导航模式下切换展开状态
+        if (!isSupplierOnlyMode.value) {
+            sidebarStore.toggleSupplierExpand(supplierId);
+        }
     }
 };
 
@@ -223,6 +235,19 @@ const initData = async () => {
         }
     }
 };
+
+// 监听路由变化，处理模式切换
+watch(() => route.path, (newPath, oldPath) => {
+    if (!isAdmin.value) return;
+    
+    const wasSupplierOnly = supplierOnlyRoutes.includes(oldPath);
+    const isNowSupplierOnly = supplierOnlyRoutes.includes(newPath);
+    
+    // 从完整导航模式切换到仅供应商模式时，折叠所有展开的供应商
+    if (!wasSupplierOnly && isNowSupplierOnly) {
+        sidebarStore.collapseAllSuppliers();
+    }
+});
 
 onMounted(() => {
     initData();

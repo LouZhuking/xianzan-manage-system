@@ -70,7 +70,7 @@
                         <div class="consumable-header">
                             <span class="consumable-icon blade"></span>
                             <span class="consumable-name">刀头</span>
-                            <el-tag v-if="consumables.blade.needReplace" type="info" size="small" class="need-replace-tag">需更换</el-tag>
+                            <el-tag v-if="consumables.blade.needReplace" type="danger" size="small" class="need-replace-tag">需更换</el-tag>
                         </div>
                         <div class="consumable-value">{{ consumables.blade.current }}/{{ consumables.blade.total }}({{ consumables.blade.percent }}%)</div>
                         <div class="progress-bar">
@@ -81,7 +81,7 @@
                         <div class="consumable-header">
                             <span class="consumable-icon ribbon"></span>
                             <span class="consumable-name">色带</span>
-                            <el-tag v-if="consumables.ribbon.needReplace" type="info" size="small" class="need-replace-tag">需更换</el-tag>
+                            <el-tag v-if="consumables.ribbon.needReplace" type="danger" size="small" class="need-replace-tag">需更换</el-tag>
                         </div>
                         <div class="consumable-value">{{ consumables.ribbon.current }}/{{ consumables.ribbon.total }}({{ consumables.ribbon.percent }}%)</div>
                         <div class="progress-bar">
@@ -92,6 +92,7 @@
                         <div class="consumable-header">
                             <span class="consumable-icon paper"></span>
                             <span class="consumable-name">纸张</span>
+                            <el-tag v-if="consumables.paper.needReplace" type="danger" size="small" class="need-replace-tag">需更换</el-tag>
                         </div>
                         <div class="consumable-value">{{ consumables.paper.current }}/{{ consumables.paper.total }}({{ consumables.paper.percent }}%)</div>
                         <div class="progress-bar">
@@ -168,7 +169,7 @@
                         </el-tag>
                     </div>
                 </div>
-                <el-table :data="filteredFaultRecords" border class="record-table" header-cell-class-name="table-header">
+                <el-table :data="filteredFaultRecords" border class="record-table" header-cell-class-name="table-header" height="300">
                     <el-table-column prop="time" label="故障时间" align="center" width="150"></el-table-column>
                     <el-table-column prop="type" label="故障类型" align="center">
                         <template #default="scope">
@@ -214,7 +215,7 @@
                         </el-tag>
                     </div>
                 </div>
-                <el-table :data="maintenanceRecords" border class="record-table" header-cell-class-name="table-header">
+                <el-table :data="filteredMaintenanceRecords" border class="record-table" header-cell-class-name="table-header" height="300">
                     <el-table-column prop="time" label="时间" align="center" width="150"></el-table-column>
                     <el-table-column prop="type" label="维护类型" align="center">
                         <template #default="scope">
@@ -260,6 +261,13 @@
                         <el-option label="纸张" value="纸张" />
                     </el-select>
                 </el-form-item>
+                <el-form-item label="使用状态" prop="status">
+                    <el-select v-model="maintenanceForm.status" placeholder="请选择使用状态" style="width: 100%">
+                        <el-option label="维护完成" value="维护完成" />
+                        <el-option label="待维护" value="待维护" />
+                        <el-option label="已处理" value="已处理" />
+                    </el-select>
+                </el-form-item>
                 <el-form-item label="备注" prop="remark">
                     <el-input
                         v-model="maintenanceForm.remark"
@@ -269,10 +277,7 @@
                     />
                 </el-form-item>
                 <el-form-item label="处理结果" prop="result">
-                    <el-select v-model="maintenanceForm.result" placeholder="请选择处理结果" style="width: 100%">
-                        <el-option label="已处理" value="已处理" />
-                        <el-option label="未处理" value="未处理" />
-                    </el-select>
+                    <el-input v-model="maintenanceForm.result" disabled />
                 </el-form-item>
             </el-form>
             <template #footer>
@@ -288,7 +293,7 @@ import { ref, reactive, watch, onMounted, computed } from 'vue';
 import { QuestionFilled, Edit, Plus } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { useSidebarStore } from '@/store/sidebar';
-import { getDeviceStatus, getFaultRecords, type FaultRecordItem } from '@/api/index';
+import { getDeviceStatus, getFaultRecords, getMaintenanceRecords, createMaintenanceRecord, type FaultRecordItem, type MaintenanceRecordItem } from '@/api/index';
 
 defineOptions({
     name: 'device-status-detail'
@@ -361,7 +366,7 @@ const calculateConsumable = (current: number, total: number): ConsumableItem => 
         current,
         total,
         percent,
-        needReplace: percent >= 75
+        needReplace: percent < 10  // 低于10%时需要更换
     };
 };
 
@@ -446,6 +451,9 @@ const resetToDefaults = () => {
     
     // 重置故障记录
     faultRecords.value = [];
+    
+    // 重置维护记录
+    maintenanceRecords.value = [];
 };
 
 // ========== 数据获取函数 ==========
@@ -539,6 +547,9 @@ const fetchDeviceData = async (deviceCode: string) => {
             
             // 获取故障记录
             fetchFaultRecords(deviceCode);
+            
+            // 获取维护记录
+            fetchMaintenanceRecords(deviceCode);
         } else {
             console.error('获取设备数据失败:', res.msg);
             resetToDefaults();
@@ -616,14 +627,36 @@ const filteredFaultRecords = computed(() => {
     return faultRecords.value.filter(record => record.type === activeFaultFilter.value);
 });
 
-// 维护记录筛选标签
-const maintenanceFilterTags = ref([
-    { key: 'all', label: '全部' },
-    { key: 'blade', label: '刀头' },
-    { key: 'ribbon', label: '色带' },
-    { key: 'paper', label: '纸张' }
-]);
+// 维护记录筛选标签（动态生成，根据API返回的维护记录中的type去重）
+const maintenanceFilterTags = computed(() => {
+    // 固定的"全部"标签
+    const tags: Array<{ key: string; label: string }> = [{ key: 'all', label: '全部' }];
+
+    // 从维护记录中提取唯一的维护类型
+    const uniqueTypes = new Set<string>();
+    maintenanceRecords.value.forEach(record => {
+        if (record.type && record.type !== '-') {
+            uniqueTypes.add(record.type);
+        }
+    });
+
+    // 将唯一类型转换为标签格式
+    uniqueTypes.forEach(type => {
+        tags.push({ key: type, label: type });
+    });
+
+    return tags;
+});
 const activeMaintenanceFilter = ref('all');
+
+// 根据筛选条件过滤后的维护记录
+const filteredMaintenanceRecords = computed(() => {
+    if (activeMaintenanceFilter.value === 'all') {
+        return maintenanceRecords.value;
+    }
+    // 直接使用选中的key作为类型进行筛选
+    return maintenanceRecords.value.filter(record => record.type === activeMaintenanceFilter.value);
+});
 
 // 故障记录数据（从API获取）
 const faultRecords = ref<Array<{
@@ -661,17 +694,47 @@ const fetchFaultRecords = async (deviceCode: string) => {
     }
 };
 
-// 维护记录数据（暂时使用静态数据，后续可接入API）
-const maintenanceRecords = ref([
-    { time: '2024-06-27 12:16', type: '刀头', usage: '6000/8000(75%)', remark: '使用接近设计寿命', result: '已处理' },
-    { time: '2024-06-27 12:16', type: '色带', usage: '380/400(95%)', remark: '色带不足，请及时更换', result: '未处理' },
-    { time: '2024-06-27 12:16', type: '纸张', usage: '380/400(95%)', remark: '纸张不足，请及时更换', result: '已处理' },
-    { time: '2024-06-27 12:16', type: '色带', usage: '380/400(95%)', remark: '色带不足，请及时更换', result: '未处理' },
-    { time: '2024-06-28 12:16', type: '纸张', usage: '380/400(95%)', remark: '纸张不足，请及时更换', result: '已处理' },
-    { time: '2024-06-27 12:16', type: '纸张', usage: '380/400(95%)', remark: '纸张不足，请及时更换', result: '已处理' },
-    { time: '2024-06-27 12:16', type: '色带', usage: '380/400(95%)', remark: '色带不足，请及时更换', result: '未处理' },
-    { time: '2024-06-28 12:16', type: '纸张', usage: '380/400(95%)', remark: '纸张不足，请及时更换', result: '已处理' }
-]);
+// 维护记录数据（从API获取）
+const maintenanceRecords = ref<Array<{
+    time: string;
+    type: string;
+    usage: string;
+    remark: string;
+    result: string;
+}>>([]);
+
+/**
+ * 获取维护记录数据
+ * @param deviceCode 设备编码
+ */
+const fetchMaintenanceRecords = async (deviceCode: string) => {
+    try {
+        const res = await getMaintenanceRecords(deviceCode);
+        console.log('维护记录API响应:', res);
+        
+        if (res.code === 200 && res.data && res.data.list) {
+            // 转换API数据格式为表格显示格式
+            // maintenanceTime->时间，maintenanceType->维护类型，maintenanceStatus->使用状态，remark->备注，processResult->处理结果
+            maintenanceRecords.value = res.data.list.map((item: MaintenanceRecordItem) => {
+                console.log('维护记录项:', item);
+                return {
+                    time: item.maintenanceTime || '-',
+                    type: item.maintenanceType || '-',
+                    usage: item.maintenanceStatus || '-',
+                    remark: item.remark || '-',
+                    // 如果processResult为null，检查maintenanceStatus是否包含"完成"来判断
+                    result: item.processResult || (item.maintenanceStatus?.includes('完成') ? '已处理' : '未处理')
+                };
+            });
+        } else {
+            console.error('获取维护记录失败:', res.msg);
+            maintenanceRecords.value = [];
+        }
+    } catch (error) {
+        console.error('获取维护记录异常:', error);
+        maintenanceRecords.value = [];
+    }
+};
 
 // ========== 添加维护记录表单 ==========
 const showMaintenanceForm = ref(false);
@@ -680,26 +743,30 @@ const maintenanceFormRef = ref<FormInstance>();
 const maintenanceForm = reactive({
     deviceId: '',
     type: '',
+    status: '',
     remark: '',
-    result: ''
+    result: '已处理'
 });
 
 const maintenanceRules: FormRules = {
     deviceId: [{ required: true, message: '设备ID不能为空', trigger: 'blur' }],
     type: [{ required: true, message: '请选择维护类型', trigger: 'change' }],
+    status: [{ required: true, message: '请选择使用状态', trigger: 'change' }],
     remark: [{ required: true, message: '请输入备注信息', trigger: 'blur' }],
     result: [{ required: true, message: '请选择处理结果', trigger: 'change' }]
 };
 
-// 监听弹窗打开，自动填充设备ID
+// 监听弹窗打开，自动填充设备ID和处理结果
 watch(showMaintenanceForm, (val) => {
     if (val) {
         maintenanceForm.deviceId = deviceDetail.deviceId;
+        maintenanceForm.result = '已处理';
     } else {
         // 关闭时重置表单
         maintenanceForm.type = '';
+        maintenanceForm.status = '';
         maintenanceForm.remark = '';
-        maintenanceForm.result = '';
+        maintenanceForm.result = '已处理';
         maintenanceFormRef.value?.resetFields();
     }
 });
@@ -707,23 +774,30 @@ watch(showMaintenanceForm, (val) => {
 // 提交维护记录表单
 const submitMaintenanceForm = async () => {
     if (!maintenanceFormRef.value) return;
-    
-    await maintenanceFormRef.value.validate((valid) => {
+
+    await maintenanceFormRef.value.validate(async (valid) => {
         if (valid) {
-            // 生成当前时间
-            const now = new Date();
-            const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-            
-            // 添加到维护记录列表
-            maintenanceRecords.value.unshift({
-                time: timeStr,
-                type: maintenanceForm.type,
-                usage: '-',
-                remark: maintenanceForm.remark,
-                result: maintenanceForm.result
-            });
-            
-            showMaintenanceForm.value = false;
+            try {
+                // 调用创建维护记录API
+                const res = await createMaintenanceRecord({
+                    deviceCode: maintenanceForm.deviceId,
+                    maintenanceType: maintenanceForm.type,
+                    remark: maintenanceForm.remark,
+                    processResult: '已处理',
+                    maintenanceStatus: maintenanceForm.status
+                });
+
+                if (res.code === 200) {
+                    console.log('创建维护记录成功:', res);
+                    // 刷新维护记录列表
+                    fetchMaintenanceRecords(maintenanceForm.deviceId);
+                    showMaintenanceForm.value = false;
+                } else {
+                    console.error('创建维护记录失败:', res.msg);
+                }
+            } catch (error) {
+                console.error('创建维护记录异常:', error);
+            }
         }
     });
 };
@@ -949,9 +1023,9 @@ const submitMaintenanceForm = async () => {
 }
 
 .need-replace-tag {
-    background-color: #e8f5e9 !important;
-    border-color: #a5d6a7 !important;
-    color: #43a047 !important;
+    background-color: #fef0f0 !important;
+    border-color: #fbc4c4 !important;
+    color: #f56c6c !important;
     font-size: 12px;
     padding: 0 6px;
     height: 20px;

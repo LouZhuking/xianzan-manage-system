@@ -22,7 +22,7 @@
             <div class="section realtime-revenue">
                 <div class="section-header">
                     <span class="section-title">实时营收</span>
-                    <span class="update-time">数据更新于: 2024/11/27 10:48:45</span>
+                    <span class="update-time">数据更新于: {{ realtimeUpdateTime }}</span>
                 </div>
                 <div class="section-body">
                     <!-- 成交金额卡片 -->
@@ -48,14 +48,14 @@
                             </svg>
                         </div>
                         <!-- 金额 -->
-                        <div class="stat-card-value">2000.00</div>
+                        <div class="stat-card-value">{{ (orderStats.totalAmount || 0).toFixed(2) }}</div>
                         <!-- 分隔线 -->
                         <div class="stat-card-divider"></div>
                         <!-- 成交人数 -->
                         <div class="stat-card-footer">
                             <span class="dot"></span>
                             <span class="label">成交人数</span>
-                            <span class="count">100</span>
+                            <span class="count">{{ orderStats.totalCount || 0 }}</span>
                         </div>
                     </div>
                     <!-- 总流水折线图 -->
@@ -81,17 +81,13 @@
                         <div class="ai-style-content">
                             <div ref="aiStyleChartRef" class="ai-pie-container"></div>
                             <div class="ai-style-legend">
-                                <div class="legend-item">
-                                    <span class="legend-dot" style="background: #F5A623;"></span>
-                                    <span class="legend-text">萌化贴纸</span>
-                                </div>
-                                <div class="legend-item">
-                                    <span class="legend-dot" style="background: #F57C00;"></span>
-                                    <span class="legend-text">人物转绘</span>
-                                </div>
-                                <div class="legend-item">
-                                    <span class="legend-dot" style="background: #2979FF;"></span>
-                                    <span class="legend-text">萌版文旅</span>
+                                <div 
+                                    class="legend-item" 
+                                    v-for="(item, index) in orderStats.orderNameStats" 
+                                    :key="item.orderName"
+                                >
+                                    <span class="legend-dot" :style="{ background: aiStyleColors[index % aiStyleColors.length] }"></span>
+                                    <span class="legend-text">{{ item.orderName }}</span>
                                 </div>
                             </div>
                         </div>
@@ -154,11 +150,6 @@
                         <span :class="{ active: tableTimeRange === 'yesterday' }" @click="tableTimeRange = 'yesterday'">昨天</span>
                         <span :class="{ active: tableTimeRange === 'week' }" @click="tableTimeRange = 'week'">近7天</span>
                         <span :class="{ active: tableTimeRange === 'month' }" @click="tableTimeRange = 'month'">近30天</span>
-                        <button class="export-btn">
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                            </svg>
-                        </button>
                     </div>
                 </div>
                 <div class="section-body">
@@ -169,7 +160,7 @@
                                 <th class="col-number">使用人数(人)</th>
                                 <th class="col-number">成交人数(人)</th>
                                 <th class="col-amount sortable">
-                                    近7天总流水(元)
+                                    {{ totalFlowHeaderLabel }}
                                     <svg class="sort-icon" viewBox="0 0 24 24" width="12" height="12" fill="#999">
                                         <path d="M7 10l5 5 5-5z"/>
                                     </svg>
@@ -267,10 +258,37 @@
 </template>
 
 <script setup lang="ts" name="revenue-flow">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import * as echarts from 'echarts';
+import { getDeviceRevenueFlow, getOrderStatistics, getTodayOrders, type DeviceRevenueFlowItem, type OrderStatisticsData, type TodayOrderItem } from '@/api/index';
+import { useSidebarStore } from '@/store/sidebar';
+
+// sidebar store
+const sidebarStore = useSidebarStore();
+
+// 订单统计数据
+const orderStats = ref<OrderStatisticsData>({
+    totalAmount: 0,
+    totalCount: 0,
+    orderNameStats: []
+});
+
+// 当天订单流水数据
+const todayOrders = ref<TodayOrderItem[]>([]);
+
+// 实时营收更新时间（取id最大的订单的createOn）
+const realtimeUpdateTime = computed(() => {
+    if (todayOrders.value.length === 0) return '--';
+    // 找到id最大的订单
+    const latestOrder = todayOrders.value.reduce((max, order) => 
+        order.id > max.id ? order : max
+    , todayOrders.value[0]);
+    // 格式化时间：2025-12-26 18:53:54 -> 2025/12/26 18:53:54
+    return latestOrder.createOn?.replace(/-/g, '/') || '--';
+});
 
 const realtimeChartRef = ref<HTMLElement | null>(null);
+let realtimeChart: echarts.ECharts | null = null;
 const aiStyleChartRef = ref<HTMLElement | null>(null);
 const aiStyleTab = ref<'amount' | 'count'>('count');
 let aiStyleChart: echarts.ECharts | null = null;
@@ -283,22 +301,172 @@ let weeklyAiStyleChart: echarts.ECharts | null = null;
 
 // 实时营收表格
 const tableTimeRange = ref<'yesterday' | 'week' | 'month'>('week');
-const tableData = ref([
-    { name: '设备1', color: '#F5A623', useCount: 130, dealCount: 130, totalFlow: '6000.00', sticker: '6000.00', portrait: '6000.00', travel: '6000.00' },
-    { name: '设备2', color: '#F5A623', useCount: 130, dealCount: 130, totalFlow: '6000.00', sticker: '6000.00', portrait: '6000.00', travel: '6000.00' },
-    { name: '设备3', color: '#F5A623', useCount: 130, dealCount: 130, totalFlow: '6000.00', sticker: '6000.00', portrait: '6000.00', travel: '6000.00' },
-    { name: '设备4', color: '#F5A623', useCount: 130, dealCount: 130, totalFlow: '6000.00', sticker: '6000.00', portrait: '6000.00', travel: '6000.00' },
-]);
+const tableLoading = ref(false);
+
+// 表格数据接口
+interface TableDataItem {
+    name: string;
+    color: string;
+    useCount: number;
+    dealCount: number;
+    totalFlow: string;
+    sticker: string;
+    portrait: string;
+    travel: string;
+}
+
+const tableData = ref<TableDataItem[]>([]);
+
+// 颜色列表，用于设备指示器
+const colorList = ['#F5A623', '#F57C00', '#2979FF', '#4CAF50', '#9C27B0', '#E91E63'];
+
+// AI风格饼图颜色列表
+const aiStyleColors = ['#F5A623', '#F57C00', '#2979FF'];
+
+// 时间范围与表头标签的映射配置
+const timeRangeHeaderMap: Record<'yesterday' | 'week' | 'month', string> = {
+    yesterday: '昨日总流水(元)',
+    week: '近7天总流水(元)',
+    month: '近30天总流水(元)'
+};
+
+// 动态表头标签计算属性
+const totalFlowHeaderLabel = computed<string>(() => {
+    return timeRangeHeaderMap[tableTimeRange.value] || '总流水(元)';
+});
+
+/**
+ * 获取设备营收流水数据
+ */
+const fetchDeviceRevenueFlow = async () => {
+    tableLoading.value = true;
+    try {
+        // 从localStorage获取用户信息
+        const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
+        const user = userInfo.user || '';
+        
+        if (!user) {
+            console.warn('未找到用户信息');
+            return;
+        }
+        
+        const res = await getDeviceRevenueFlow(user, tableTimeRange.value);
+        
+        if (res.code === 200 && res.data) {
+            tableData.value = res.data.map((item: DeviceRevenueFlowItem, index: number) => ({
+                name: item.deviceName,
+                color: colorList[index % colorList.length],
+                useCount: item.userCount,
+                dealCount: item.dealUserCount,
+                totalFlow: item.totalRevenue.toFixed(2),
+                sticker: (item.stickerRevenue || 0).toFixed(2),
+                portrait: (item.portraitRevenue || 0).toFixed(2),
+                travel: (item.travelRevenue || 0).toFixed(2)
+            }));
+        }
+    } catch (error) {
+        console.error('获取设备营收流水失败:', error);
+    } finally {
+        tableLoading.value = false;
+    }
+};
+
+// 监听时间范围变化，重新获取数据
+watch(tableTimeRange, () => {
+    fetchDeviceRevenueFlow();
+});
+
+/**
+ * 获取订单统计数据（成交金额、成交人数）
+ * 根据当前选中的供应商发送请求
+ */
+const fetchOrderStatistics = async () => {
+    try {
+        // 获取当前选中的供应商名称
+        const dealerName = sidebarStore.currentSupplierInfo?.name;
+        
+        // dealerName 是必填参数，没有时不发送请求
+        if (!dealerName) {
+            console.log('未选择供应商，跳过订单统计请求');
+            return;
+        }
+        
+        // 固定使用 today 作为时间范围
+        const timeRange = 'today';
+        
+        console.log('请求订单统计, dealerName:', dealerName, 'timeRange:', timeRange);
+        
+        const res = await getOrderStatistics(dealerName, timeRange);
+        console.log('订单统计响应:', res);
+        
+        if (res.code === 200 && res.data) {
+            orderStats.value = res.data;
+            // 更新AI风格饼图
+            updateAiStyleChart();
+        }
+    } catch (error) {
+        console.error('获取订单统计失败:', error);
+    }
+};
+
+// 监听供应商变化，重新获取订单统计数据
+watch(
+    () => sidebarStore.currentSupplierInfo,
+    (newVal) => {
+        console.log('供应商变化:', newVal);
+        fetchOrderStatistics();
+    },
+    { deep: true }
+);
 
 // 总流水折线图配置
 const initRealtimeChart = () => {
     if (!realtimeChartRef.value) return;
     
-    const chart = echarts.init(realtimeChartRef.value);
+    realtimeChart = echarts.init(realtimeChartRef.value);
+    updateRealtimeChart();
     
-    // 模拟数据 - 10:00 到 22:00 的成交金额
-    const xData = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
-    const yData = [0, 15, 28, 30, 45, 55, 70, 65, 45, 30, 20, 5, 0];
+    // 响应式
+    window.addEventListener('resize', () => {
+        realtimeChart?.resize();
+    });
+};
+
+/**
+ * 根据当天订单数据更新折线图
+ */
+const updateRealtimeChart = () => {
+    if (!realtimeChart) return;
+    
+    // 按小时聚合订单数据
+    const hourlyData: Record<string, number> = {};
+    
+    // 初始化 10:00 到 22:00 的时间段
+    for (let h = 10; h <= 22; h++) {
+        const hourStr = `${h.toString().padStart(2, '0')}:00`;
+        hourlyData[hourStr] = 0;
+    }
+    
+    // 聚合订单金额到对应小时
+    todayOrders.value.forEach(order => {
+        if (order.createOn) {
+            const hour = order.createOn.split(' ')[1]?.split(':')[0];
+            if (hour) {
+                const hourNum = parseInt(hour, 10);
+                if (hourNum >= 10 && hourNum <= 22) {
+                    const hourStr = `${hourNum.toString().padStart(2, '0')}:00`;
+                    hourlyData[hourStr] = (hourlyData[hourStr] || 0) + order.zje;
+                }
+            }
+        }
+    });
+    
+    const xData = Object.keys(hourlyData);
+    const yData = Object.values(hourlyData);
+    
+    // 计算Y轴最大值，向上取整到合适的刻度
+    const maxValue = Math.max(...yData, 80);
+    const yMax = Math.ceil(maxValue / 20) * 20;
     
     const option = {
         tooltip: {
@@ -347,8 +515,8 @@ const initRealtimeChart = () => {
         yAxis: {
             type: 'value',
             min: 0,
-            max: 80,
-            interval: 20,
+            max: yMax,
+            interval: yMax / 4,
             axisLine: {
                 show: false
             },
@@ -401,12 +569,25 @@ const initRealtimeChart = () => {
         ]
     };
     
-    chart.setOption(option);
-    
-    // 响应式
-    window.addEventListener('resize', () => {
-        chart.resize();
-    });
+    realtimeChart.setOption(option);
+};
+
+/**
+ * 获取当天订单流水数据
+ */
+const fetchTodayOrders = async () => {
+    try {
+        const res = await getTodayOrders();
+        console.log('当天订单流水响应:', res);
+        
+        if (res.code === 200 && res.data) {
+            todayOrders.value = res.data;
+            // 更新折线图
+            updateRealtimeChart();
+        }
+    } catch (error) {
+        console.error('获取当天订单流水失败:', error);
+    }
 };
 
 // AI风格饼图配置
@@ -424,26 +605,37 @@ const initAiStyleChart = () => {
 const updateAiStyleChart = () => {
     if (!aiStyleChart) return;
     
-    // 根据tab切换数据
+    // 根据tab切换数据，使用接口返回的动态数据
     const isCount = aiStyleTab.value === 'count';
-    const data = isCount 
-        ? [
-            { value: 800, name: '萌化贴纸' },
-            { value: 700, name: '人物转绘' },
-            { value: 500, name: '萌版文旅' }
-          ]
-        : [
-            { value: 1200, name: '萌化贴纸' },
-            { value: 900, name: '人物转绘' },
-            { value: 600, name: '萌版文旅' }
-          ];
+    const statsData = orderStats.value.orderNameStats || [];
     
+    // 将接口数据转换为饼图数据格式
+    const data = statsData.map(item => ({
+        value: isCount ? item.count : item.amount,
+        name: item.orderName
+    }));
+    
+    // 如果没有数据，显示默认空状态
+    if (data.length === 0) {
+        data.push({ value: 0, name: '暂无数据' });
+    }
+    
+    // 计算总值
     const total = data.reduce((sum, item) => sum + item.value, 0);
-    const centerValue = isCount ? '2000个' : '¥2700';
-    const percentage = '31%';
+    
+    // 默认显示第一项的信息
+    const getDisplayInfo = (index: number) => {
+        const item = data[index] || data[0];
+        const value = isCount ? `${item.value}个` : `¥${item.value.toFixed(2)}`;
+        const percent = total > 0 ? `${((item.value / total) * 100).toFixed(0)}%` : '0%';
+        const name = item.name || '';
+        return { value, percent, name };
+    };
+    
+    const defaultInfo = getDisplayInfo(0);
     
     const option = {
-        color: ['#F5A623', '#F57C00', '#2979FF'],
+        color: aiStyleColors,
         series: [
             // 外圈刻度装饰
             {
@@ -504,7 +696,7 @@ const updateAiStyleChart = () => {
                     show: true,
                     position: 'center',
                     formatter: () => {
-                        return `{value|${centerValue}}\n{percent|${percentage}}\n{name|名称名称}`;
+                        return `{value|${defaultInfo.value}}\n{percent|${defaultInfo.percent}}\n{name|${defaultInfo.name}}`;
                     },
                     rich: {
                         value: {
@@ -533,6 +725,46 @@ const updateAiStyleChart = () => {
     };
     
     aiStyleChart.setOption(option);
+    
+    // 移除旧的事件监听，避免重复绑定
+    aiStyleChart.off('mouseover');
+    aiStyleChart.off('mouseout');
+    
+    // 鼠标悬停时更新中心文字
+    aiStyleChart.on('mouseover', { seriesIndex: 1 }, (params: any) => {
+        const info = getDisplayInfo(params.dataIndex);
+        aiStyleChart?.setOption({
+            series: [
+                {},
+                {},
+                {
+                    label: {
+                        formatter: () => {
+                            return `{value|${info.value}}\n{percent|${info.percent}}\n{name|${info.name}}`;
+                        }
+                    }
+                }
+            ]
+        });
+    });
+    
+    // 鼠标移出时恢复默认显示第一项
+    aiStyleChart.on('mouseout', { seriesIndex: 1 }, () => {
+        const info = getDisplayInfo(0);
+        aiStyleChart?.setOption({
+            series: [
+                {},
+                {},
+                {
+                    label: {
+                        formatter: () => {
+                            return `{value|${info.value}}\n{percent|${info.percent}}\n{name|${info.name}}`;
+                        }
+                    }
+                }
+            ]
+        });
+    });
 };
 
 watch(aiStyleTab, () => {
@@ -847,6 +1079,12 @@ onMounted(() => {
     initAiStyleChart();
     initWeeklyChart();
     initWeeklyAiStyleChart();
+    // 获取设备营收流水数据
+    fetchDeviceRevenueFlow();
+    // 获取订单统计数据
+    fetchOrderStatistics();
+    // 获取当天订单流水数据
+    fetchTodayOrders();
 });
 </script>
 

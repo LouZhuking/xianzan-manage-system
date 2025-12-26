@@ -282,3 +282,254 @@ export const getFaultRecords = (deviceCode: string, page?: number, size?: number
         params
     });
 };
+
+
+/**
+ * 维护记录项接口
+ * @description 实际接口返回的数据结构
+ */
+export interface MaintenanceRecordItem {
+    id: number;
+    deviceCode: string;
+    maintenanceType: string;      // 维护类型：刀头、色带、纸张
+    maintenanceStatus: string;    // 维护状态：维护完成、待维护
+    maintenanceTime: string;      // 维护时间
+    remark: string | null;        // 备注
+    processResult: string | null; // 处理结果
+    createOn: string;
+    updateOn: string;
+}
+
+/**
+ * 维护记录分页数据接口
+ */
+export interface MaintenanceRecordPageData {
+    total: number;
+    list: MaintenanceRecordItem[];
+    pageNum: number;
+    pageSize: number;
+    size: number;
+    startRow: number;
+    endRow: number;
+    pages: number;
+    prePage: number;
+    nextPage: number;
+    isFirstPage: boolean;
+    isLastPage: boolean;
+    hasPreviousPage: boolean;
+    hasNextPage: boolean;
+    navigatePages: number;
+    navigatepageNums: number[];
+    navigateFirstPage: number;
+    navigateLastPage: number;
+}
+
+/**
+ * 维护记录响应接口
+ * @description 获取设备维护记录列表
+ * 
+ * 接口地址: GET https://culture.xianzanwl.com/dm/device/maintenance-records
+ * 接口ID: 396832973
+ */
+export interface MaintenanceRecordsResponse {
+    code: number;
+    msg: string;
+    data: MaintenanceRecordPageData;
+    trackId?: string;
+}
+
+/**
+ * 获取维护记录接口
+ * @param deviceCode 设备编码（必填）
+ * @param page 页码（可选）
+ * @param size 每页数量（可选）
+ * @returns Promise<MaintenanceRecordsResponse> 返回维护记录列表
+ */
+export const getMaintenanceRecords = (deviceCode: string, page?: number, size?: number): Promise<MaintenanceRecordsResponse> => {
+    const params: { deviceCode: string; page?: number; size?: number } = { deviceCode };
+    if (page !== undefined) params.page = page;
+    if (size !== undefined) params.size = size;
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/device/maintenance-records',
+        method: 'get',
+        params
+    });
+};
+
+
+/**
+ * 创建维护记录请求参数接口
+ * @description POST /device/maintenance-records 接口参数
+ * 接口ID: 396767078
+ */
+export interface CreateMaintenanceRecordParams {
+    deviceCode: string;           // 设备ID
+    maintenanceType: string;      // 维护类型：刀头、色带、纸张
+    remark: string;               // 备注
+    processResult?: string;       // 处理结果：已处理
+    maintenanceStatus?: string;   // 维护状态（备选字段名）
+}
+
+/**
+ * 创建维护记录响应接口
+ */
+export interface CreateMaintenanceRecordResponse {
+    code: number;
+    msg: string;
+    data: MaintenanceRecordItem | null;
+    trackId?: string;
+}
+
+/**
+ * 创建维护记录接口
+ * @param params 维护记录参数
+ * @returns Promise<CreateMaintenanceRecordResponse> 返回创建结果
+ */
+export const createMaintenanceRecord = (params: CreateMaintenanceRecordParams): Promise<CreateMaintenanceRecordResponse> => {
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/device/maintenance-records',
+        method: 'post',
+        data: params
+    });
+};
+
+/**
+ * 设备营收流水项接口
+ * @description 设备营收详细数据
+ * 
+ * 接口地址: GET https://culture.xianzanwl.com/dm/revenue/device-revenue-flow
+ * 接口ID: 396303438
+ */
+export interface DeviceRevenueFlowItem {
+    deviceName: string;      // 设备名称
+    userCount: number;       // 使用人数
+    dealUserCount: number;   // 成交人数
+    totalRevenue: number;    // 总流水
+    stickerRevenue?: number; // 萌化贴纸收入
+    portraitRevenue?: number;// 人物转绘收入
+    travelRevenue?: number;  // 萌版文旅收入
+}
+
+/**
+ * 设备营收流水响应接口
+ */
+export interface DeviceRevenueFlowResponse {
+    code: number;
+    msg: string;
+    data: DeviceRevenueFlowItem[];
+    trackId?: string;
+}
+
+/**
+ * 获取设备营收流水接口
+ * @param user 用户账号（必填）
+ * @param timeRange 时间范围（可选）: yesterday-昨天, week-近7天, month-近30天
+ * @returns Promise<DeviceRevenueFlowResponse> 返回设备营收流水列表
+ */
+export const getDeviceRevenueFlow = (user: string, timeRange?: string): Promise<DeviceRevenueFlowResponse> => {
+    const params: { user: string; timeRange?: string } = { user };
+    if (timeRange) {
+        params.timeRange = timeRange;
+    }
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/revenue/device-revenue-flow',
+        method: 'get',
+        params
+    });
+};
+
+/**
+ * 订单统计数据项接口
+ */
+export interface OrderNameStat {
+    orderName: string;   // 订单名称（如"萌化贴纸"、"文旅AI"等）
+    amount: number;      // 金额
+    count: number;       // 次数
+}
+
+/**
+ * 订单统计响应数据接口
+ */
+export interface OrderStatisticsData {
+    totalAmount: number;           // 成交金额
+    totalCount: number;            // 成交人数
+    orderNameStats: OrderNameStat[]; // 各风格统计
+}
+
+/**
+ * 订单统计响应接口
+ * @description 风格次数金额查询
+ * 
+ * 接口地址: POST https://culture.xianzanwl.com/dm/order/statistics
+ * 接口ID: 397490004
+ */
+export interface OrderStatisticsResponse {
+    code: number;
+    msg: string;
+    data: OrderStatisticsData;
+    trackId?: string;
+}
+
+/**
+ * 获取订单统计接口
+ * @param dealerName 供应商名称（可选，如 "tinghua"）
+ * @param timeRange 时间范围（可选，如 "today"）
+ * @returns Promise<OrderStatisticsResponse> 返回订单统计数据
+ */
+export const getOrderStatistics = (dealerName?: string, timeRange?: string): Promise<OrderStatisticsResponse> => {
+    const data: { dealerName?: string; timeRange?: string } = {};
+    if (dealerName) {
+        data.dealerName = dealerName;
+    }
+    if (timeRange) {
+        data.timeRange = timeRange;
+    }
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/order/statistics',
+        method: 'post',
+        data  // POST 请求应使用 data 而非 params
+    });
+};
+
+/**
+ * 当天订单流水项接口
+ * @description 查询当天订单流水
+ * 
+ * 接口地址: GET https://culture.xianzanwl.com/dm/revenue/today-orders
+ * 接口ID: 397419077
+ */
+export interface TodayOrderItem {
+    id: number;
+    orderNo: string;           // 订单号
+    orderName: string;         // 订单名称（如"萌化贴纸"、"文旅AI"等）
+    zje: number;               // 总金额
+    bl: string;                // 比例
+    yj: number;                // 佣金
+    payCode: string;           // 支付代码
+    orderType: string;         // 订单类型
+    deviceId: string;          // 设备ID
+    deviceCode: string;        // 设备编码
+    createOn: string;          // 创建时间
+    updateOn: string;          // 更新时间
+}
+
+/**
+ * 当天订单流水响应接口
+ */
+export interface TodayOrdersResponse {
+    code: number;
+    msg: string;
+    data: TodayOrderItem[];
+    trackId?: string;
+}
+
+/**
+ * 获取当天订单流水接口
+ * @returns Promise<TodayOrdersResponse> 返回当天订单流水列表
+ */
+export const getTodayOrders = (): Promise<TodayOrdersResponse> => {
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/revenue/today-orders',
+        method: 'get'
+    });
+};
