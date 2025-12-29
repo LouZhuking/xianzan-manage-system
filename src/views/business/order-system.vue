@@ -71,7 +71,6 @@
                         <el-select v-model="query.status" placeholder="请选择" clearable :style="{ width: isSupplier ? '120px' : '150px' }">
                             <el-option label="全部" value=""></el-option>
                             <el-option label="已完成" value="completed"></el-option>
-                            <el-option label="待处理" value="pending"></el-option>
                             <el-option label="退款成功" value="refunded"></el-option>
                         </el-select>
                     </div>
@@ -160,107 +159,133 @@
 </template>
 
 <script setup lang="ts" name="order-system">
-import { ref, reactive, computed } from 'vue';
+import { ref, reactive, computed, watch, onMounted } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Download, DocumentCopy, Location, Monitor, Setting } from '@element-plus/icons-vue';
 import { usePermissStore } from '@/store/permiss';
+import { useSidebarStore } from '@/store/sidebar';
+import { searchOrders, type OrderSearchParams } from '@/api/index';
+import { transformOrderData, mapStatusToOrderType, mapPayMethodToPayCode, mapStyleTypeToOrderName, type OrderItem } from '@/utils/order-transform';
 
 // 权限store
 const permissStore = usePermissStore();
+// 侧边栏store
+const sidebarStore = useSidebarStore();
 // 是否为供应商
 const isSupplier = computed(() => permissStore.isSupplier);
 
-// 定义订单数据接口
-interface OrderItem {
-    orderNo: string;
-    deviceName: string;
-    styleType: string;
-    amount: number | null;
-    status: string;
-    payMethod: string;
-    createTime: string;
-}
+/**
+ * 获取当前选中的供应商名称
+ * - 管理员选择"供应商总览"时返回空字符串
+ * - 管理员选择特定供应商时返回供应商名称
+ * - 供应商角色时返回当前供应商名称
+ */
+const getCurrentDealerName = computed((): string => {
+    if (permissStore.isAdmin) {
+        // 供应商总览（index === 0）返回空字符串，查询所有
+        if (sidebarStore.activeSupplier?.index === 0) {
+            return '';
+        }
+        // 特定供应商返回其名称
+        return sidebarStore.currentSupplierInfo?.name || '';
+    }
+    // 供应商视图：返回当前供应商名称
+    return sidebarStore.currentSupplierInfo?.name || '';
+});
 
 // 查询参数
 const query = reactive({
     orderNo: '',
     status: '',
-    dateRange: ['2024/11/01', '2024/11/20'],
+    dateRange: [] as string[],
     styleType: '',
     payMethod: '',
     pageIndex: 1,
     pageSize: 10
 });
 
-// 表格数据
-const tableData = ref<OrderItem[]>([
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '',
-        amount: null,
-        status: 'refunded',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '',
-        amount: null,
-        status: 'pending',
-        payMethod: '微信',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '微信',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '微信',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    }
-]);
+// 表格数据（初始为空，由 API 获取）
+const tableData = ref<OrderItem[]>([]);
 
-const pageTotal = ref(100);
+const pageTotal = ref(0);
 const loading = ref(false);
+
+/**
+ * 获取订单数据
+ * 根据当前供应商选择和筛选条件查询订单
+ */
+const fetchOrders = async () => {
+    loading.value = true;
+    try {
+        // 构建请求参数
+        const params: OrderSearchParams = {
+            dealerName: getCurrentDealerName.value,
+            pageNum: query.pageIndex,
+            pageSize: query.pageSize
+        };
+
+        // 添加筛选条件
+        if (query.orderNo) {
+            params.orderNo = query.orderNo;
+        }
+        if (query.status) {
+            const orderType = mapStatusToOrderType(query.status);
+            if (orderType) {
+                params.orderType = orderType;
+            }
+        }
+        if (query.payMethod) {
+            const payCode = mapPayMethodToPayCode(query.payMethod);
+            if (payCode) {
+                params.payCode = payCode;
+            }
+        }
+        if (query.styleType) {
+            const orderName = mapStyleTypeToOrderName(query.styleType);
+            if (orderName) {
+                params.orderName = orderName;
+            }
+        }
+        if (query.dateRange && query.dateRange.length === 2) {
+            params.startDate = query.dateRange[0];
+            params.endDate = query.dateRange[1];
+        }
+
+        console.log('订单查询参数:', params);
+
+        const response = await searchOrders(params);
+        
+        if (response.code === 200 && response.data) {
+            tableData.value = transformOrderData(response.data.list);
+            pageTotal.value = response.data.total;
+            console.log('订单数据:', tableData.value);
+        } else {
+            ElMessage.error(response.msg || '获取订单数据失败');
+        }
+    } catch (error) {
+        console.error('获取订单数据失败:', error);
+        ElMessage.error('网络错误，请稍后重试');
+    } finally {
+        loading.value = false;
+    }
+};
+
+// 监听供应商选择变化，自动刷新订单数据
+watch(
+    () => [sidebarStore.activeSupplier, sidebarStore.currentSupplierInfo],
+    () => {
+        console.log('供应商选择变化，当前dealerName:', getCurrentDealerName.value);
+        // 重置页码
+        query.pageIndex = 1;
+        fetchOrders();
+    },
+    { deep: true }
+);
+
+// 页面初始化时获取订单数据
+onMounted(() => {
+    fetchOrders();
+});
 
 // 获取状态文本
 const getStatusText = (status: string) => {
@@ -274,11 +299,9 @@ const getStatusText = (status: string) => {
 
 // 搜索
 const handleSearch = () => {
-    loading.value = true;
-    setTimeout(() => {
-        loading.value = false;
-        ElMessage.success('查询成功');
-    }, 500);
+    // 重置页码为1
+    query.pageIndex = 1;
+    fetchOrders();
 };
 
 // 重置
@@ -288,6 +311,9 @@ const handleReset = () => {
     query.dateRange = [];
     query.styleType = '';
     query.payMethod = '';
+    // 重置页码为1
+    query.pageIndex = 1;
+    fetchOrders();
 };
 
 // 复制订单号
@@ -299,10 +325,13 @@ const handleCopy = (orderNo: string) => {
 // 分页
 const handlePageChange = (val: number) => {
     query.pageIndex = val;
+    fetchOrders();
 };
 
 const handleSizeChange = (val: number) => {
     query.pageSize = val;
+    query.pageIndex = 1;  // 切换每页数量时重置页码
+    fetchOrders();
 };
 
 // 防止未使用警告

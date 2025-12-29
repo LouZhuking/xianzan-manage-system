@@ -394,7 +394,7 @@ export const createMaintenanceRecord = (params: CreateMaintenanceRecordParams): 
 };
 
 /**
- * 设备营收流水项接口
+ * 设备营收流水项接口（旧接口，保留兼容）
  * @description 设备营收详细数据
  * 
  * 接口地址: GET https://culture.xianzanwl.com/dm/revenue/device-revenue-flow
@@ -430,6 +430,57 @@ export const getDeviceRevenueFlow = (user: string, timeRange?: string): Promise<
     const params: { user: string; timeRange?: string } = { user };
     if (timeRange) {
         params.timeRange = timeRange;
+    }
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/revenue/device-revenue-flow',
+        method: 'get',
+        params
+    });
+};
+
+/**
+ * 查询设备详细金额项接口
+ * @description 根据供应商和时间范围查询设备详细金额
+ * 
+ * 接口地址: GET https://culture.xianzanwl.com/dm/revenue/device-revenue-flow
+ * 接口ID: 396303438
+ */
+export interface DeviceDetailAmountItem {
+    deviceName: string;                    // 设备名称
+    deviceCode: string;                    // 设备编码
+    userCount: number;                     // 使用人数
+    dealUserCount: number;                 // 成交人数
+    totalRevenue: number;                  // 总流水
+    orderTypeAmounts: Record<string, number>; // 各风格金额，如 { "萌化贴纸": 60, "文旅AI": 30 }
+}
+
+/**
+ * 查询设备详细金额响应数据接口
+ */
+export interface DeviceDetailAmountData {
+    list: DeviceDetailAmountItem[];
+}
+
+/**
+ * 查询设备详细金额响应接口
+ */
+export interface DeviceDetailAmountResponse {
+    code: number;
+    msg: string;
+    data: DeviceDetailAmountData;
+    trackId?: string;
+}
+
+/**
+ * 查询设备详细金额接口
+ * @param dateRange 时间范围（必填）: yesterday-昨天, last7days-近7天, last30days-近30天
+ * @param dealerName 供应商名称（可选，如 "tinghua"，不传则查询全部供应商）
+ * @returns Promise<DeviceDetailAmountResponse> 返回设备详细金额列表
+ */
+export const getDeviceDetailAmount = (dateRange: string, dealerName?: string): Promise<DeviceDetailAmountResponse> => {
+    const params: { dateRange: string; dealerName?: string } = { dateRange };
+    if (dealerName) {
+        params.dealerName = dealerName;
     }
     return request({
         url: 'https://culture.xianzanwl.com/dm/revenue/device-revenue-flow',
@@ -531,5 +582,94 @@ export const getTodayOrders = (): Promise<TodayOrdersResponse> => {
     return request({
         url: 'https://culture.xianzanwl.com/dm/revenue/today-orders',
         method: 'get'
+    });
+};
+
+/**
+ * 订单查询项接口
+ * @description 订单查询接口返回的订单数据结构
+ * 
+ * 接口地址: POST https://culture.xianzanwl.com/dm/order/search
+ * 接口ID: 276137306
+ */
+export interface OrderSearchItem {
+    orderNo: string;        // 订单编号（对应表格中的"设备编号"）
+    orderName: string;      // 订单名称（风格类型）
+    zje: number;            // 订单总金额
+    bl: string;             // 佣金比例
+    yj: number;             // 佣金
+    payCode: string;        // 支付方式代码：00-支付宝，01-微信
+    orderType: string;      // 订单类型：00-正常，01-退款
+    deviceCode: string;     // 设备编码（对应表格中的"设备名称"）
+    createOn: string;       // 下单时间
+}
+
+/**
+ * 订单查询分页数据接口
+ */
+export interface OrderSearchPageData {
+    total: number;
+    list: OrderSearchItem[];
+    pageNum: number;
+    pageSize: number;
+    size: number;
+    startRow: number;
+    endRow: number;
+    pages: number;
+    prePage: number;
+    nextPage: number;
+    isFirstPage: boolean;
+    isLastPage: boolean;
+    hasPreviousPage: boolean;
+    hasNextPage: boolean;
+    navigatePages: number;
+    navigatepageNums: number[];
+    navigateFirstPage: number;
+    navigateLastPage: number;
+}
+
+/**
+ * 订单查询响应接口
+ */
+export interface OrderSearchResponse {
+    code: number;
+    msg: string;
+    data: OrderSearchPageData;
+    trackId?: string;
+}
+
+/**
+ * 订单查询请求参数接口
+ */
+export interface OrderSearchParams {
+    dealerName: string;      // 供应商名称（必填）
+    pageNum?: number;        // 页码
+    pageSize?: number;       // 每页数量
+    orderNo?: string;        // 订单编号（可选筛选）
+    payCode?: string;        // 支付方式（可选筛选）：00-支付宝，01-微信
+    orderType?: string;      // 订单类型（可选筛选）：00-正常，01-退款
+    orderName?: string;      // 风格类型（可选筛选）：如"萌化贴纸"、"文旅AI"等
+    startDate?: string;      // 开始日期（可选筛选）
+    endDate?: string;        // 结束日期（可选筛选）
+}
+
+/**
+ * 订单查询接口（支持筛选）
+ * @param params 查询参数
+ * @returns Promise<OrderSearchResponse> 返回订单列表
+ * @description
+ * 接口地址: POST https://culture.xianzanwl.com/dm/order/searchByDealer
+ * 接口ID: 397078804
+ * 
+ * - deviceCode 对应表格中的"设备名称"
+ * - orderNo 对应表格中的"订单编号"
+ * - payCode: 00-支付宝，01-微信
+ * - orderType: 00-正常，01-退款
+ */
+export const searchOrders = (params: OrderSearchParams): Promise<OrderSearchResponse> => {
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/order/searchByDealer',
+        method: 'post',
+        data: params  // POST请求使用data传递参数
     });
 };

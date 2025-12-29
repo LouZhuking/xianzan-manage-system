@@ -159,19 +159,22 @@
 </template>
 
 <script setup lang="ts" name="supplier-order">
-import { ref, reactive } from 'vue';
+import { ref, reactive, onMounted, onActivated } from 'vue';
 import { ElMessage } from 'element-plus';
 import { Download, DocumentCopy, Location, Monitor, Setting } from '@element-plus/icons-vue';
+import { searchOrders, type OrderSearchItem } from '@/api/index';
 
-// 定义订单数据接口
-interface OrderItem {
-    orderNo: string;
-    deviceName: string;
-    styleType: string;
-    amount: number | null;
-    status: string;
-    payMethod: string;
-    createTime: string;
+// 定义表格展示数据接口
+interface OrderDisplayItem {
+    orderNo: string;        // 订单编号
+    deviceName: string;     // 设备名称（来自deviceCode）
+    styleType: string;      // 风格类型（来自orderName）
+    amount: number | null;  // 单价（来自zje）
+    status: string;         // 订单状态
+    payMethod: string;      // 支付方式
+    createTime: string;     // 下单时间
+    commission: number;     // 佣金（来自yj）
+    commissionRate: string; // 佣金比例（来自bl）
 }
 
 // 查询参数
@@ -186,74 +189,93 @@ const query = reactive({
 });
 
 // 表格数据
-const tableData = ref<OrderItem[]>([
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '',
-        amount: null,
-        status: 'refunded',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '',
-        amount: null,
-        status: 'pending',
-        payMethod: '微信',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '微信',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '微信',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    },
-    {
-        orderNo: '6932845754086986976',
-        deviceName: '设备1',
-        styleType: '萌化贴纸',
-        amount: 36.00,
-        status: 'completed',
-        payMethod: '支付宝',
-        createTime: '2024-08-03 08:13:07'
-    }
-]);
-
-const pageTotal = ref(100);
+const tableData = ref<OrderDisplayItem[]>([]);
+const pageTotal = ref(0);
 const loading = ref(false);
+
+// 支付方式映射：00-支付宝，01-微信
+const payCodeMap: Record<string, string> = {
+    '00': '支付宝',
+    '01': '微信'
+};
+
+// 订单类型映射：00-正常（已完成），01-退款
+const orderTypeMap: Record<string, string> = {
+    '00': 'completed',
+    '01': 'refunded'
+};
+
+// 将API数据转换为表格展示数据
+const transformOrderData = (item: OrderSearchItem): OrderDisplayItem => {
+    return {
+        orderNo: item.orderNo,                           // 订单编号
+        deviceName: item.deviceCode,                     // 设备名称（使用deviceCode）
+        styleType: item.orderName || '',                 // 风格类型
+        amount: item.zje,                                // 单价
+        status: orderTypeMap[item.orderType] || 'pending', // 订单状态
+        payMethod: payCodeMap[item.payCode] || item.payCode, // 支付方式
+        createTime: '',                                  // API未返回时间，暂为空
+        commission: item.yj,                             // 佣金
+        commissionRate: item.bl                          // 佣金比例
+    };
+};
+
+// 获取订单列表
+const fetchOrderList = async () => {
+    loading.value = true;
+    try {
+        // 构建查询参数
+        const params: any = {
+            dealerName: 'tinghua',  // 供应商名称（注意大小写）
+            pageNum: query.pageIndex,
+            pageSize: query.pageSize
+        };
+        
+        // 添加可选筛选条件
+        if (query.orderNo) {
+            params.orderNo = query.orderNo;
+        }
+        if (query.payMethod) {
+            // 转换支付方式：alipay->00, wechat->01
+            const payCodeReverseMap: Record<string, string> = {
+                'alipay': '00',
+                'wechat': '01'
+            };
+            params.payCode = payCodeReverseMap[query.payMethod];
+        }
+        if (query.status) {
+            // 转换订单状态：completed->00, refunded->01
+            const orderTypeReverseMap: Record<string, string> = {
+                'completed': '00',
+                'refunded': '01'
+            };
+            params.orderType = orderTypeReverseMap[query.status];
+        }
+        
+        // 添加日期范围筛选
+        if (query.dateRange && query.dateRange.length === 2) {
+            params.startDate = query.dateRange[0];
+            params.endDate = query.dateRange[1];
+        }
+        
+        console.log('订单查询参数:', params);
+        const res = await searchOrders(params);
+        console.log('订单查询响应:', res);
+        
+        if (res.code === 200 && res.data) {
+            // 转换数据格式
+            tableData.value = res.data.list.map(transformOrderData);
+            pageTotal.value = res.data.total;
+        } else {
+            ElMessage.error(res.msg || '获取订单列表失败');
+        }
+    } catch (error) {
+        console.error('获取订单列表失败:', error);
+        ElMessage.error('获取订单列表失败');
+    } finally {
+        loading.value = false;
+    }
+};
 
 // 获取状态文本
 const getStatusText = (status: string) => {
@@ -267,11 +289,8 @@ const getStatusText = (status: string) => {
 
 // 搜索
 const handleSearch = () => {
-    loading.value = true;
-    setTimeout(() => {
-        loading.value = false;
-        ElMessage.success('查询成功');
-    }, 500);
+    query.pageIndex = 1;  // 重置到第一页
+    fetchOrderList();
 };
 
 // 重置
@@ -281,6 +300,8 @@ const handleReset = () => {
     query.dateRange = [];
     query.styleType = '';
     query.payMethod = '';
+    query.pageIndex = 1;
+    fetchOrderList();
 };
 
 // 复制订单号
@@ -292,11 +313,24 @@ const handleCopy = (orderNo: string) => {
 // 分页
 const handlePageChange = (val: number) => {
     query.pageIndex = val;
+    fetchOrderList();
 };
 
 const handleSizeChange = (val: number) => {
     query.pageSize = val;
+    query.pageIndex = 1;
+    fetchOrderList();
 };
+
+// 页面加载时获取数据
+onMounted(() => {
+    fetchOrderList();
+});
+
+// 组件被激活时重新获取数据（处理keep-alive缓存场景）
+onActivated(() => {
+    fetchOrderList();
+});
 
 // 防止未使用警告
 const _icons = { Download, DocumentCopy, Location, Monitor, Setting };

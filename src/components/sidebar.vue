@@ -160,6 +160,8 @@ const isDeviceActive = (deviceId: string): boolean => {
 const handleOverviewClick = () => {
     sidebarStore.setActiveSupplier(0, '供应商总览');
     sidebarStore.activeDevice = null;
+    // 清除当前供应商信息，避免供应商项同时显示选中状态
+    sidebarStore.currentSupplierInfo = null;
 };
 
 // 处理供应商展开/折叠（同时选中该供应商）

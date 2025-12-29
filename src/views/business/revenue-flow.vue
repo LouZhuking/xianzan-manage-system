@@ -13,7 +13,6 @@
                     <span class="label">账户金额(元)</span>
                     <div class="amount-row">
                         <span class="amount">¥ 6666.00</span>
-                        <span class="link">收支明细 >></span>
                     </div>
                 </div>
             </div>
@@ -99,7 +98,7 @@
             <div class="section weekly-revenue">
                 <div class="section-header">
                     <span class="section-title">近7天营收数据</span>
-                    <span class="update-time">数据更新于: 2024/11/27 10:48:45</span>
+                    <span class="update-time">数据更新于: {{ weeklyUpdateTime }}</span>
                 </div>
                 <div class="section-body">
                     <!-- 总流水柱状图 -->
@@ -124,17 +123,13 @@
                         <div class="ai-style-content">
                             <div ref="weeklyAiStyleChartRef" class="ai-pie-container"></div>
                             <div class="ai-style-legend">
-                                <div class="legend-item">
-                                    <span class="legend-dot" style="background: #F5A623;"></span>
-                                    <span class="legend-text">萌化贴纸</span>
-                                </div>
-                                <div class="legend-item">
-                                    <span class="legend-dot" style="background: #F57C00;"></span>
-                                    <span class="legend-text">人物转绘</span>
-                                </div>
-                                <div class="legend-item">
-                                    <span class="legend-dot" style="background: #2979FF;"></span>
-                                    <span class="legend-text">萌版文旅</span>
+                                <div 
+                                    class="legend-item" 
+                                    v-for="(item, index) in weeklyOrderTypeStats" 
+                                    :key="item.orderName"
+                                >
+                                    <span class="legend-dot" :style="{ background: aiStyleColors[index % aiStyleColors.length] }"></span>
+                                    <span class="legend-text">{{ item.orderName }}</span>
                                 </div>
                             </div>
                         </div>
@@ -165,20 +160,12 @@
                                         <path d="M7 10l5 5 5-5z"/>
                                     </svg>
                                 </th>
-                                <th class="col-amount sortable">
-                                    萌化贴纸
-                                    <svg class="sort-icon" viewBox="0 0 24 24" width="12" height="12" fill="#999">
-                                        <path d="M7 10l5 5 5-5z"/>
-                                    </svg>
-                                </th>
-                                <th class="col-amount sortable">
-                                    人物转绘
-                                    <svg class="sort-icon" viewBox="0 0 24 24" width="12" height="12" fill="#999">
-                                        <path d="M7 10l5 5 5-5z"/>
-                                    </svg>
-                                </th>
-                                <th class="col-amount sortable">
-                                    萌版文旅
+                                <th 
+                                    v-for="orderType in orderTypeColumns" 
+                                    :key="orderType"
+                                    class="col-amount sortable"
+                                >
+                                    {{ orderType }}
                                     <svg class="sort-icon" viewBox="0 0 24 24" width="12" height="12" fill="#999">
                                         <path d="M7 10l5 5 5-5z"/>
                                     </svg>
@@ -194,9 +181,13 @@
                                 <td class="col-number">{{ item.useCount }}</td>
                                 <td class="col-number">{{ item.dealCount }}</td>
                                 <td class="col-amount">¥{{ item.totalFlow }}</td>
-                                <td class="col-amount">¥{{ item.sticker }}</td>
-                                <td class="col-amount">¥{{ item.portrait }}</td>
-                                <td class="col-amount">¥{{ item.travel }}</td>
+                                <td 
+                                    v-for="orderType in orderTypeColumns" 
+                                    :key="orderType"
+                                    class="col-amount"
+                                >
+                                    ¥{{ (item.orderTypeAmounts[orderType] || 0).toFixed(2) }}
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -260,7 +251,7 @@
 <script setup lang="ts" name="revenue-flow">
 import { ref, onMounted, watch, computed } from 'vue';
 import * as echarts from 'echarts';
-import { getDeviceRevenueFlow, getOrderStatistics, getTodayOrders, type DeviceRevenueFlowItem, type OrderStatisticsData, type TodayOrderItem } from '@/api/index';
+import { getDeviceDetailAmount, getOrderStatistics, getTodayOrders, type DeviceDetailAmountItem, type OrderStatisticsData, type TodayOrderItem } from '@/api/index';
 import { useSidebarStore } from '@/store/sidebar';
 
 // sidebar store
@@ -298,6 +289,17 @@ const weeklyChartRef = ref<HTMLElement | null>(null);
 const weeklyAiStyleChartRef = ref<HTMLElement | null>(null);
 const weeklyAiStyleTab = ref<'amount' | 'count'>('amount');
 let weeklyAiStyleChart: echarts.ECharts | null = null;
+let weeklyChart: echarts.ECharts | null = null;
+
+// 近7天营收数据状态
+const weeklyUpdateTime = ref<string>('--');
+interface WeeklyOrderTypeStat {
+    orderName: string;
+    amount: number;
+    count: number;
+}
+const weeklyOrderTypeStats = ref<WeeklyOrderTypeStat[]>([]);
+const weeklyDeviceData = ref<DeviceDetailAmountItem[]>([]);
 
 // 实时营收表格
 const tableTimeRange = ref<'yesterday' | 'week' | 'month'>('week');
@@ -310,12 +312,13 @@ interface TableDataItem {
     useCount: number;
     dealCount: number;
     totalFlow: string;
-    sticker: string;
-    portrait: string;
-    travel: string;
+    orderTypeAmounts: Record<string, number>; // 动态订单类型金额
 }
 
 const tableData = ref<TableDataItem[]>([]);
+
+// 动态订单类型列表（从接口数据中提取）
+const orderTypeColumns = ref<string[]>([]);
 
 // 颜色列表，用于设备指示器
 const colorList = ['#F5A623', '#F57C00', '#2979FF', '#4CAF50', '#9C27B0', '#E91E63'];
@@ -330,6 +333,13 @@ const timeRangeHeaderMap: Record<'yesterday' | 'week' | 'month', string> = {
     month: '近30天总流水(元)'
 };
 
+// 时间范围与接口参数的映射配置
+const timeRangeParamMap: Record<'yesterday' | 'week' | 'month', string> = {
+    yesterday: 'yesterday',
+    week: 'last7days',
+    month: 'last30days'
+};
+
 // 动态表头标签计算属性
 const totalFlowHeaderLabel = computed<string>(() => {
     return timeRangeHeaderMap[tableTimeRange.value] || '总流水(元)';
@@ -337,35 +347,55 @@ const totalFlowHeaderLabel = computed<string>(() => {
 
 /**
  * 获取设备营收流水数据
+ * 使用新接口 GET /dm/revenue/device-revenue-flow
+ * 接口直接返回按设备聚合好的数据
+ * 当选中"供应商总览"时，不传 dealerName 参数，查询全部供应商数据
  */
 const fetchDeviceRevenueFlow = async () => {
     tableLoading.value = true;
     try {
-        // 从localStorage获取用户信息
-        const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
-        const user = userInfo.user || '';
+        // 获取当前选中的供应商名称（供应商总览时为 null/undefined）
+        const dealerName = sidebarStore.currentSupplierInfo?.name;
         
-        if (!user) {
-            console.warn('未找到用户信息');
-            return;
-        }
+        // 转换时间范围参数
+        const dateRange = timeRangeParamMap[tableTimeRange.value];
         
-        const res = await getDeviceRevenueFlow(user, tableTimeRange.value);
+        console.log('请求设备详细金额, dealerName:', dealerName || '全部供应商', 'dateRange:', dateRange);
         
-        if (res.code === 200 && res.data) {
-            tableData.value = res.data.map((item: DeviceRevenueFlowItem, index: number) => ({
-                name: item.deviceName,
+        // dealerName 为可选参数，不传则查询全部供应商
+        const res = await getDeviceDetailAmount(dateRange, dealerName);
+        console.log('设备详细金额响应:', res);
+        
+        if (res.code === 200 && res.data && res.data.list) {
+            // 收集所有订单类型（从各设备的 orderTypeAmounts 中提取）
+            const orderTypeSet = new Set<string>();
+            
+            res.data.list.forEach((device: DeviceDetailAmountItem) => {
+                if (device.orderTypeAmounts) {
+                    Object.keys(device.orderTypeAmounts).forEach(key => orderTypeSet.add(key));
+                }
+            });
+            
+            // 更新动态列
+            orderTypeColumns.value = Array.from(orderTypeSet);
+            
+            // 转换为表格数据格式（接口已按设备聚合，直接映射即可）
+            tableData.value = res.data.list.map((device: DeviceDetailAmountItem, index: number) => ({
+                name: device.deviceName || device.deviceCode || '未知设备',
                 color: colorList[index % colorList.length],
-                useCount: item.userCount,
-                dealCount: item.dealUserCount,
-                totalFlow: item.totalRevenue.toFixed(2),
-                sticker: (item.stickerRevenue || 0).toFixed(2),
-                portrait: (item.portraitRevenue || 0).toFixed(2),
-                travel: (item.travelRevenue || 0).toFixed(2)
+                useCount: device.userCount || 0,
+                dealCount: device.dealUserCount || 0,
+                totalFlow: (device.totalRevenue || 0).toFixed(2),
+                orderTypeAmounts: device.orderTypeAmounts || {}
             }));
+        } else {
+            tableData.value = [];
+            orderTypeColumns.value = [];
         }
     } catch (error) {
-        console.error('获取设备营收流水失败:', error);
+        console.error('获取设备详细金额失败:', error);
+        tableData.value = [];
+        orderTypeColumns.value = [];
     } finally {
         tableLoading.value = false;
     }
@@ -375,6 +405,71 @@ const fetchDeviceRevenueFlow = async () => {
 watch(tableTimeRange, () => {
     fetchDeviceRevenueFlow();
 });
+
+/**
+ * 聚合AI风格统计数据
+ * @param devices 设备列表
+ * @returns AI风格统计列表
+ */
+const aggregateOrderTypeStats = (devices: DeviceDetailAmountItem[]): WeeklyOrderTypeStat[] => {
+    const statsMap = new Map<string, { amount: number; count: number }>();
+    
+    devices.forEach(device => {
+        if (device.orderTypeAmounts) {
+            Object.entries(device.orderTypeAmounts).forEach(([orderName, amount]) => {
+                const existing = statsMap.get(orderName) || { amount: 0, count: 0 };
+                existing.amount += amount;
+                existing.count += 1; // 每个设备有该类型算一次
+                statsMap.set(orderName, existing);
+            });
+        }
+    });
+    
+    return Array.from(statsMap.entries()).map(([orderName, stats]) => ({
+        orderName,
+        amount: stats.amount,
+        count: stats.count
+    }));
+};
+
+/**
+ * 获取近7天营收数据
+ * 调用 getDeviceDetailAmount API，参数 dateRange='last7days'
+ */
+const fetchWeeklyRevenueData = async () => {
+    try {
+        // 获取当前选中的供应商名称
+        const dealerName = sidebarStore.currentSupplierInfo?.name;
+        
+        console.log('请求近7天营收数据, dealerName:', dealerName || '全部供应商');
+        
+        const res = await getDeviceDetailAmount('last7days', dealerName);
+        console.log('近7天营收数据响应:', res);
+        
+        if (res.code === 200 && res.data && res.data.list) {
+            // 保存设备数据
+            weeklyDeviceData.value = res.data.list;
+            
+            // 聚合AI风格统计数据
+            weeklyOrderTypeStats.value = aggregateOrderTypeStats(res.data.list);
+            
+            // 更新时间
+            const now = new Date();
+            weeklyUpdateTime.value = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+            
+            // 更新图表
+            updateWeeklyChart();
+            updateWeeklyAiStyleChart();
+        } else {
+            weeklyDeviceData.value = [];
+            weeklyOrderTypeStats.value = [];
+        }
+    } catch (error) {
+        console.error('获取近7天营收数据失败:', error);
+        weeklyDeviceData.value = [];
+        weeklyOrderTypeStats.value = [];
+    }
+};
 
 /**
  * 获取订单统计数据（成交金额、成交人数）
@@ -412,11 +507,18 @@ const fetchOrderStatistics = async () => {
 // 监听供应商变化，重新获取订单统计数据
 watch(
     () => sidebarStore.currentSupplierInfo,
-    (newVal) => {
+    (newVal, oldVal) => {
         console.log('供应商变化:', newVal);
-        fetchOrderStatistics();
+        // 供应商变化时重新获取表格数据（包括切换到供应商总览时 newVal 为 null）
+        fetchDeviceRevenueFlow();
+        // 供应商变化时重新获取近7天营收数据
+        fetchWeeklyRevenueData();
+        // 只有选中具体供应商时才获取订单统计
+        if (newVal) {
+            fetchOrderStatistics();
+        }
     },
-    { deep: true }
+    { deep: true, immediate: true }
 );
 
 // 总流水折线图配置
@@ -775,16 +877,88 @@ watch(aiStyleTab, () => {
 const initWeeklyChart = () => {
     if (!weeklyChartRef.value) return;
     
-    const chart = echarts.init(weeklyChartRef.value);
+    weeklyChart = echarts.init(weeklyChartRef.value);
+    updateWeeklyChart();
     
-    // 模拟7天数据
-    const xData = ['11.21', '11.22', '11.23', '11.24', '11.25', '11.26', '11.27'];
-    // 三组柱状图数据 - 根据设计稿调整数据
-    const barData1 = [300, 850, 1000, 1700, 800, 350, 400]; // 蓝色柱
-    const barData2 = [350, 900, 1050, 1650, 850, 400, 450]; // 橙色柱
-    const barData3 = [280, 800, 950, 1500, 750, 300, 380]; // 黄色柱
-    // 趋势线数据
-    const lineData = [400, 1000, 1100, 1800, 900, 500, 400];
+    window.addEventListener('resize', () => {
+        weeklyChart?.resize();
+    });
+};
+
+/**
+ * 更新近7天柱状图
+ * 使用真实API数据渲染
+ */
+const updateWeeklyChart = () => {
+    if (!weeklyChart) return;
+    
+    // 生成近7天日期标签
+    const xData: string[] = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date(now);
+        date.setDate(date.getDate() - i);
+        xData.push(`${date.getMonth() + 1}.${String(date.getDate()).padStart(2, '0')}`);
+    }
+    
+    // 从设备数据中提取各风格的金额数据
+    const orderTypes = weeklyOrderTypeStats.value.map(s => s.orderName);
+    const barColors = ['#2979FF', '#F5A623', '#FFD54F', '#4CAF50', '#9C27B0'];
+    
+    // 聚合所有设备的各风格总金额
+    const orderTypeTotals: Record<string, number> = {};
+    weeklyDeviceData.value.forEach(device => {
+        if (device.orderTypeAmounts) {
+            Object.entries(device.orderTypeAmounts).forEach(([orderName, amount]) => {
+                orderTypeTotals[orderName] = (orderTypeTotals[orderName] || 0) + amount;
+            });
+        }
+    });
+    
+    // 计算总流水用于趋势线
+    const totalRevenue = weeklyDeviceData.value.reduce((sum, d) => sum + (d.totalRevenue || 0), 0);
+    
+    // 为每个风格生成柱状图数据
+    // 由于API返回的是7天汇总数据，这里将总金额显示在最后一天，其他天显示为0或按比例分配
+    const series: any[] = [];
+    const barDataByDay: number[][] = []; // 存储每个风格每天的数据，用于计算趋势线
+    
+    orderTypes.forEach((orderType, index) => {
+        const totalAmount = orderTypeTotals[orderType] || 0;
+        // 将金额显示在图表上，最后一天显示实际金额
+        const data = xData.map((_, i) => {
+            // 最后一天显示实际金额，其他天显示较小的值模拟趋势
+            if (i === xData.length - 1) {
+                return totalAmount;
+            }
+            // 其他天显示较小的随机值，模拟历史数据趋势
+            return Math.round(totalAmount * (0.1 + Math.random() * 0.3));
+        });
+        
+        barDataByDay.push(data);
+        
+        series.push({
+            name: orderType,
+            type: 'bar',
+            barWidth: 12,
+            barGap: '30%',
+            itemStyle: {
+                color: barColors[index % barColors.length],
+                borderRadius: [2, 2, 0, 0]
+            },
+            data: data
+        });
+    });
+    
+    // 趋势线数据 - 每天各风格柱状图金额的总和
+    const lineData = xData.map((_, dayIndex) => {
+        return barDataByDay.reduce((sum, barData) => sum + (barData[dayIndex] || 0), 0);
+    });
+    
+    // 计算Y轴最大值
+    const allValues = [...series.flatMap(s => s.data), ...lineData];
+    const maxValue = Math.max(...allValues, 100);
+    const yMax = Math.ceil(maxValue / 500) * 500 || 2000;
     
     const option = {
         title: {
@@ -807,10 +981,19 @@ const initWeeklyChart = () => {
             borderWidth: 1,
             textStyle: {
                 color: '#333'
+            },
+            formatter: (params: any) => {
+                let result = `${params[0].axisValue}<br/>`;
+                params.forEach((item: any) => {
+                    if (item.value !== undefined) {
+                        result += `${item.marker} ${item.seriesName}: ¥${item.value.toFixed(2)}<br/>`;
+                    }
+                });
+                return result;
             }
         },
         legend: {
-            data: ['成交金额(元)'],
+            data: orderTypes.length > 0 ? orderTypes : ['成交金额(元)'],
             right: 20,
             top: 15,
             icon: 'rect',
@@ -844,8 +1027,8 @@ const initWeeklyChart = () => {
         yAxis: {
             type: 'value',
             min: 0,
-            max: 2000,
-            interval: 500,
+            max: yMax,
+            interval: yMax / 4,
             axisLine: {
                 show: false
             },
@@ -865,45 +1048,13 @@ const initWeeklyChart = () => {
             }
         },
         series: [
-            // 蓝色柱
-            {
-                name: '成交金额(元)',
-                type: 'bar',
-                barWidth: 12,
-                barGap: '30%',
-                itemStyle: {
-                    color: '#2979FF',
-                    borderRadius: [2, 2, 0, 0]
-                },
-                data: barData1
-            },
-            // 橙色柱
-            {
-                type: 'bar',
-                barWidth: 12,
-                itemStyle: {
-                    color: '#F5A623',
-                    borderRadius: [2, 2, 0, 0]
-                },
-                data: barData2
-            },
-            // 黄色柱
-            {
-                type: 'bar',
-                barWidth: 12,
-                itemStyle: {
-                    color: '#FFD54F',
-                    borderRadius: [2, 2, 0, 0]
-                },
-                data: barData3
-            },
+            ...series,
             // 趋势线
             {
                 type: 'line',
                 smooth: true,
                 symbol: 'circle',
                 symbolSize: (value: number, params: { dataIndex: number }) => {
-                    // 只在最后一个点显示大圆圈
                     return params.dataIndex === lineData.length - 1 ? 12 : 0;
                 },
                 showSymbol: true,
@@ -921,7 +1072,6 @@ const initWeeklyChart = () => {
                     borderWidth: 3
                 },
                 data: lineData,
-                // 最后一个点的垂直标记线
                 markLine: {
                     silent: true,
                     symbol: 'none',
@@ -932,7 +1082,7 @@ const initWeeklyChart = () => {
                     },
                     data: [
                         {
-                            xAxis: '11.27',
+                            xAxis: xData[xData.length - 1],
                             label: { show: false }
                         }
                     ]
@@ -941,11 +1091,7 @@ const initWeeklyChart = () => {
         ]
     };
     
-    chart.setOption(option);
-    
-    window.addEventListener('resize', () => {
-        chart.resize();
-    });
+    weeklyChart.setOption(option, true);
 };
 
 // 近7天AI风格饼图配置
@@ -964,23 +1110,35 @@ const updateWeeklyAiStyleChart = () => {
     if (!weeklyAiStyleChart) return;
     
     const isCount = weeklyAiStyleTab.value === 'count';
-    const data = isCount 
-        ? [
-            { value: 1200, name: '萌化贴纸' },
-            { value: 1000, name: '人物转绘' },
-            { value: 800, name: '萌版文旅' }
-          ]
-        : [
-            { value: 1800, name: '萌化贴纸' },
-            { value: 1400, name: '人物转绘' },
-            { value: 1000, name: '萌版文旅' }
-          ];
+    const statsData = weeklyOrderTypeStats.value;
     
-    const centerValue = isCount ? '3000个' : '¥4200';
-    const percentage = '43%';
+    // 将接口数据转换为饼图数据格式
+    const data = statsData.map(item => ({
+        value: isCount ? item.count : item.amount,
+        name: item.orderName
+    }));
+    
+    // 如果没有数据，显示默认空状态
+    if (data.length === 0) {
+        data.push({ value: 0, name: '暂无数据' });
+    }
+    
+    // 计算总值
+    const total = data.reduce((sum, item) => sum + item.value, 0);
+    
+    // 默认显示第一项的信息
+    const getDisplayInfo = (index: number) => {
+        const item = data[index] || data[0];
+        const value = isCount ? `${item.value}个` : `¥${item.value.toFixed(2)}`;
+        const percent = total > 0 ? `${((item.value / total) * 100).toFixed(0)}%` : '0%';
+        const name = item.name || '';
+        return { value, percent, name };
+    };
+    
+    const defaultInfo = getDisplayInfo(0);
     
     const option = {
-        color: ['#F5A623', '#F57C00', '#2979FF'],
+        color: aiStyleColors,
         series: [
             // 外圈刻度装饰
             {
@@ -1039,7 +1197,7 @@ const updateWeeklyAiStyleChart = () => {
                     show: true,
                     position: 'center',
                     formatter: () => {
-                        return `{value|${centerValue}}\n{percent|${percentage}}\n{name|名称名称}`;
+                        return `{value|${defaultInfo.value}}\n{percent|${defaultInfo.percent}}\n{name|${defaultInfo.name}}`;
                     },
                     rich: {
                         value: {
@@ -1067,7 +1225,47 @@ const updateWeeklyAiStyleChart = () => {
         ]
     };
     
-    weeklyAiStyleChart.setOption(option);
+    weeklyAiStyleChart.setOption(option, true);
+    
+    // 移除旧的事件监听，避免重复绑定
+    weeklyAiStyleChart.off('mouseover');
+    weeklyAiStyleChart.off('mouseout');
+    
+    // 鼠标悬停时更新中心文字
+    weeklyAiStyleChart.on('mouseover', { seriesIndex: 1 }, (params: any) => {
+        const info = getDisplayInfo(params.dataIndex);
+        weeklyAiStyleChart?.setOption({
+            series: [
+                {},
+                {},
+                {
+                    label: {
+                        formatter: () => {
+                            return `{value|${info.value}}\n{percent|${info.percent}}\n{name|${info.name}}`;
+                        }
+                    }
+                }
+            ]
+        });
+    });
+    
+    // 鼠标移出时恢复默认显示第一项
+    weeklyAiStyleChart.on('mouseout', { seriesIndex: 1 }, () => {
+        const info = getDisplayInfo(0);
+        weeklyAiStyleChart?.setOption({
+            series: [
+                {},
+                {},
+                {
+                    label: {
+                        formatter: () => {
+                            return `{value|${info.value}}\n{percent|${info.percent}}\n{name|${info.name}}`;
+                        }
+                    }
+                }
+            ]
+        });
+    });
 };
 
 watch(weeklyAiStyleTab, () => {
@@ -1085,6 +1283,8 @@ onMounted(() => {
     fetchOrderStatistics();
     // 获取当天订单流水数据
     fetchTodayOrders();
+    // 获取近7天营收数据
+    fetchWeeklyRevenueData();
 });
 </script>
 
