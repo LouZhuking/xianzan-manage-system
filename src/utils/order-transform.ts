@@ -57,14 +57,20 @@ export const formatAmount = (amount: number | null | undefined): string => {
  * @returns 转换后的前端订单列表
  */
 export const transformOrderData = (list: OrderSearchItem[]): OrderItem[] => {
+    // 确保 list 是数组
+    if (!Array.isArray(list)) {
+        console.warn('transformOrderData: list 不是数组', list);
+        return [];
+    }
+    
     return list.map(item => ({
-        orderNo: item.orderNo,
-        deviceName: item.deviceCode,      // deviceCode 映射到设备名称
-        styleType: item.orderName || '',  // orderName 映射到风格类型
-        amount: item.zje ?? null,         // zje 映射到单价
-        status: mapOrderType(item.orderType),
-        payMethod: mapPayCode(item.payCode),
-        createTime: item.createOn || ''   // createOn 映射到下单时间
+        orderNo: item.orderNo || '',
+        deviceName: item.deviceCode || '',      // deviceCode 映射到设备名称
+        styleType: item.orderName || '',        // orderName 映射到风格类型
+        amount: item.zje ?? null,               // zje 映射到单价
+        status: mapOrderType(item.orderType || ''),
+        payMethod: mapPayCode(item.payCode || ''),
+        createTime: item.createOn || ''         // createOn 映射到下单时间
     }));
 };
 

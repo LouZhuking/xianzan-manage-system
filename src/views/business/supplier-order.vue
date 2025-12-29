@@ -184,7 +184,7 @@ const query = reactive({
     dateRange: ['2024/11/01', '2024/11/20'],
     styleType: '',
     payMethod: '',
-    pageIndex: 1,
+    pageNum: 1,
     pageSize: 10
 });
 

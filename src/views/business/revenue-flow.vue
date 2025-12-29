@@ -12,7 +12,7 @@
                 <div class="account-info">
                     <span class="label">账户金额(元)</span>
                     <div class="amount-row">
-                        <span class="amount">¥ 6666.00</span>
+                        <span class="amount">¥ {{ totalRevenue.toFixed(2) }}</span>
                     </div>
                 </div>
             </div>
@@ -212,35 +212,43 @@
                 <div class="ranking-summary">
                     <div class="ranking-amount">
                         <span class="label">昨日成交金额(元)</span>
-                        <span class="value">2000.00</span>
+                        <span class="value">{{ rankingSummary.totalAmount.toFixed(2) }}</span>
                     </div>
                     <div class="ranking-stats">
                         <div class="stat-item">
                             <span class="stat-label">使用人数</span>
-                            <span class="stat-value">120</span>
+                            <span class="stat-value">{{ rankingSummary.userCount }}</span>
                         </div>
                         <div class="stat-item">
                             <span class="stat-label">成交人数</span>
-                            <span class="stat-value">100</span>
+                            <span class="stat-value">{{ rankingSummary.dealUserCount }}</span>
                         </div>
                     </div>
                 </div>
                 <div class="ranking-list">
-                    <div class="ranking-item top" v-for="i in 3" :key="'top-' + i">
+                    <div 
+                        class="ranking-item top" 
+                        v-for="item in rankingList.slice(0, 3)" 
+                        :key="'top-' + item.rank"
+                    >
                         <span class="rank-icon">
                             <svg viewBox="0 0 24 24" width="22" height="22">
                                 <path d="M5 3h14v3l-3 3v2h6v2h-2v8h-2v-8h-2v8h-2v-8H8v8H6v-8H4v-8h6V9L7 6V3z" fill="#F5A623"/>
                                 <circle cx="12" cy="6" r="2" fill="#F5A623"/>
                             </svg>
-                            <span class="rank-num">{{ i }}</span>
+                            <span class="rank-num">{{ item.rank }}</span>
                         </span>
-                        <span class="name">{{ i === 1 ? '新天地广场3F' : (i === 2 ? '新天地广场2F' : '新天地广场1F') }}</span>
-                        <span class="amount highlight">666 <span class="unit">元</span></span>
+                        <span class="name">{{ item.name }}</span>
+                        <span class="amount highlight">{{ item.amount.toFixed(2) }} <span class="unit">元</span></span>
                     </div>
-                    <div class="ranking-item" v-for="i in 8" :key="'normal-' + i">
-                        <span class="rank">{{ i + 3 }}</span>
-                        <span class="name">其他地址名称</span>
-                        <span class="amount">666 <span class="unit">元</span></span>
+                    <div 
+                        class="ranking-item" 
+                        v-for="item in rankingList.slice(3)" 
+                        :key="'normal-' + item.rank"
+                    >
+                        <span class="rank">{{ item.rank }}</span>
+                        <span class="name">{{ item.name }}</span>
+                        <span class="amount">{{ item.amount.toFixed(2) }} <span class="unit">元</span></span>
                     </div>
                 </div>
             </div>
@@ -251,11 +259,14 @@
 <script setup lang="ts" name="revenue-flow">
 import { ref, onMounted, watch, computed } from 'vue';
 import * as echarts from 'echarts';
-import { getDeviceDetailAmount, getOrderStatistics, getTodayOrders, type DeviceDetailAmountItem, type OrderStatisticsData, type TodayOrderItem } from '@/api/index';
+import { getDeviceDetailAmount, getOrderStatistics, getTodayOrders, getTotalRevenue, type DeviceDetailAmountItem, type OrderStatisticsData, type TodayOrderItem } from '@/api/index';
 import { useSidebarStore } from '@/store/sidebar';
 
 // sidebar store
 const sidebarStore = useSidebarStore();
+
+// 账户总金额
+const totalRevenue = ref<number>(0);
 
 // 订单统计数据
 const orderStats = ref<OrderStatisticsData>({
@@ -300,6 +311,24 @@ interface WeeklyOrderTypeStat {
 }
 const weeklyOrderTypeStats = ref<WeeklyOrderTypeStat[]>([]);
 const weeklyDeviceData = ref<DeviceDetailAmountItem[]>([]);
+
+// 昨日营收榜单数据状态
+interface RankingSummary {
+    totalAmount: number;      // 昨日成交金额
+    userCount: number;        // 使用人数
+    dealUserCount: number;    // 成交人数
+}
+interface RankingItem {
+    rank: number;             // 排名
+    name: string;             // 设备名称
+    amount: number;           // 营收金额
+}
+const rankingSummary = ref<RankingSummary>({
+    totalAmount: 0,
+    userCount: 0,
+    dealUserCount: 0
+});
+const rankingList = ref<RankingItem[]>([]);
 
 // 实时营收表格
 const tableTimeRange = ref<'yesterday' | 'week' | 'month'>('week');
@@ -433,6 +462,34 @@ const aggregateOrderTypeStats = (devices: DeviceDetailAmountItem[]): WeeklyOrder
 };
 
 /**
+ * 计算昨日营收榜单汇总数据
+ * @param devices 设备列表
+ * @returns 汇总数据
+ */
+const calculateRankingSummary = (devices: DeviceDetailAmountItem[]): RankingSummary => {
+    return devices.reduce((summary, device) => ({
+        totalAmount: summary.totalAmount + (device.totalRevenue || 0),
+        userCount: summary.userCount + (device.userCount || 0),
+        dealUserCount: summary.dealUserCount + (device.dealUserCount || 0)
+    }), { totalAmount: 0, userCount: 0, dealUserCount: 0 });
+};
+
+/**
+ * 生成排行榜列表（按营收降序排列）
+ * @param devices 设备列表
+ * @returns 排行榜列表
+ */
+const generateRankingList = (devices: DeviceDetailAmountItem[]): RankingItem[] => {
+    return [...devices]
+        .sort((a, b) => (b.totalRevenue || 0) - (a.totalRevenue || 0))
+        .map((device, index) => ({
+            rank: index + 1,
+            name: device.deviceName || device.deviceCode || '未知设备',
+            amount: device.totalRevenue || 0
+        }));
+};
+
+/**
  * 获取近7天营收数据
  * 调用 getDeviceDetailAmount API，参数 dateRange='last7days'
  */
@@ -472,25 +529,51 @@ const fetchWeeklyRevenueData = async () => {
 };
 
 /**
- * 获取订单统计数据（成交金额、成交人数）
- * 根据当前选中的供应商发送请求
+ * 获取昨日营收榜单数据
+ * 调用 getDeviceDetailAmount API，参数 dateRange='yesterday'
  */
-const fetchOrderStatistics = async () => {
+const fetchYesterdayRankingData = async () => {
     try {
         // 获取当前选中的供应商名称
         const dealerName = sidebarStore.currentSupplierInfo?.name;
         
-        // dealerName 是必填参数，没有时不发送请求
-        if (!dealerName) {
-            console.log('未选择供应商，跳过订单统计请求');
-            return;
+        console.log('请求昨日营收榜单, dealerName:', dealerName || '全部供应商');
+        
+        const res = await getDeviceDetailAmount('yesterday', dealerName);
+        console.log('昨日营收榜单响应:', res);
+        
+        if (res.code === 200 && res.data && res.data.list) {
+            // 计算汇总数据
+            rankingSummary.value = calculateRankingSummary(res.data.list);
+            // 生成排行榜列表
+            rankingList.value = generateRankingList(res.data.list);
+        } else {
+            rankingSummary.value = { totalAmount: 0, userCount: 0, dealUserCount: 0 };
+            rankingList.value = [];
         }
+    } catch (error) {
+        console.error('获取昨日营收榜单失败:', error);
+        rankingSummary.value = { totalAmount: 0, userCount: 0, dealUserCount: 0 };
+        rankingList.value = [];
+    }
+};
+
+/**
+ * 获取订单统计数据（成交金额、成交人数）
+ * 根据当前选中的供应商发送请求
+ * 当选中"供应商总览"时，不传 dealerName 参数，查询全部供应商数据
+ */
+const fetchOrderStatistics = async () => {
+    try {
+        // 获取当前选中的供应商名称（供应商总览时为 null/undefined）
+        const dealerName = sidebarStore.currentSupplierInfo?.name;
         
         // 固定使用 today 作为时间范围
         const timeRange = 'today';
         
-        console.log('请求订单统计, dealerName:', dealerName, 'timeRange:', timeRange);
+        console.log('请求订单统计, dealerName:', dealerName || '全部供应商', 'timeRange:', timeRange);
         
+        // dealerName 为可选参数，不传则查询全部供应商
         const res = await getOrderStatistics(dealerName, timeRange);
         console.log('订单统计响应:', res);
         
@@ -504,7 +587,31 @@ const fetchOrderStatistics = async () => {
     }
 };
 
+/**
+ * 获取账户总营收金额
+ * 根据当前选中的供应商发送请求
+ * 当选中"供应商总览"时，不传 dealerName 参数，查询全部供应商数据
+ */
+const fetchTotalRevenue = async () => {
+    try {
+        const dealerName = sidebarStore.currentSupplierInfo?.name;
+        
+        console.log('请求总营收, dealerName:', dealerName || '全部供应商');
+        
+        const res = await getTotalRevenue(dealerName);
+        console.log('总营收响应:', res);
+        
+        if (res.code === 200) {
+            totalRevenue.value = res.data || 0;
+        }
+    } catch (error) {
+        console.error('获取总营收失败:', error);
+    }
+};
+
 // 监听供应商变化，重新获取订单统计数据
+// 注意：不使用 immediate: true，因为初始化时图表函数还未定义
+// 初始数据加载在 onMounted 中进行
 watch(
     () => sidebarStore.currentSupplierInfo,
     (newVal, oldVal) => {
@@ -513,12 +620,16 @@ watch(
         fetchDeviceRevenueFlow();
         // 供应商变化时重新获取近7天营收数据
         fetchWeeklyRevenueData();
-        // 只有选中具体供应商时才获取订单统计
-        if (newVal) {
-            fetchOrderStatistics();
-        }
+        // 供应商变化时重新获取当天订单流水数据（实时营收折线图）
+        fetchTodayOrders();
+        // 供应商变化时重新获取订单统计（包括切换到供应商总览时查询全部供应商）
+        fetchOrderStatistics();
+        // 供应商变化时重新获取昨日营收榜单数据
+        fetchYesterdayRankingData();
+        // 供应商变化时重新获取总营收
+        fetchTotalRevenue();
     },
-    { deep: true, immediate: true }
+    { deep: true }
 );
 
 // 总流水折线图配置
@@ -676,10 +787,16 @@ const updateRealtimeChart = () => {
 
 /**
  * 获取当天订单流水数据
+ * 根据当前选中的供应商发送请求
  */
 const fetchTodayOrders = async () => {
     try {
-        const res = await getTodayOrders();
+        // 获取当前选中的供应商名称
+        const dealerName = sidebarStore.currentSupplierInfo?.name;
+        
+        console.log('请求当天订单流水, dealerName:', dealerName || '全部供应商');
+        
+        const res = await getTodayOrders(dealerName);
         console.log('当天订单流水响应:', res);
         
         if (res.code === 200 && res.data) {
@@ -1285,6 +1402,10 @@ onMounted(() => {
     fetchTodayOrders();
     // 获取近7天营收数据
     fetchWeeklyRevenueData();
+    // 获取昨日营收榜单数据
+    fetchYesterdayRankingData();
+    // 获取账户总营收
+    fetchTotalRevenue();
 });
 </script>
 

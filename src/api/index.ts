@@ -576,12 +576,18 @@ export interface TodayOrdersResponse {
 
 /**
  * 获取当天订单流水接口
+ * @param dealerName 供应商名称（可选，如 "tinghua"，不传则查询全部供应商）
  * @returns Promise<TodayOrdersResponse> 返回当天订单流水列表
  */
-export const getTodayOrders = (): Promise<TodayOrdersResponse> => {
+export const getTodayOrders = (dealerName?: string): Promise<TodayOrdersResponse> => {
+    const params: { dealerName?: string } = {};
+    if (dealerName) {
+        params.dealerName = dealerName;
+    }
     return request({
         url: 'https://culture.xianzanwl.com/dm/revenue/today-orders',
-        method: 'get'
+        method: 'get',
+        params
     });
 };
 
@@ -671,5 +677,36 @@ export const searchOrders = (params: OrderSearchParams): Promise<OrderSearchResp
         url: 'https://culture.xianzanwl.com/dm/order/searchByDealer',
         method: 'post',
         data: params  // POST请求使用data传递参数
+    });
+};
+
+
+/**
+ * 总营收响应接口
+ * @description 查询账户总营收金额
+ * 
+ * 接口地址: GET https://culture.xianzanwl.com/dm/revenue/total
+ */
+export interface TotalRevenueResponse {
+    code: number;        // 状态码，200表示成功
+    msg: string;         // 返回消息
+    data: number;        // 总营收金额
+    trackId?: string;    // 追踪ID
+}
+
+/**
+ * 获取总营收接口
+ * @param dealerName 供应商名称（可选，如 "tinghua"，不传则查询全部供应商）
+ * @returns Promise<TotalRevenueResponse> 返回总营收金额
+ */
+export const getTotalRevenue = (dealerName?: string): Promise<TotalRevenueResponse> => {
+    const params: { dealerName?: string } = {};
+    if (dealerName) {
+        params.dealerName = dealerName;
+    }
+    return request({
+        url: 'https://culture.xianzanwl.com/dm/revenue/total',
+        method: 'get',
+        params
     });
 };

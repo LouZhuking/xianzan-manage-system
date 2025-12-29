@@ -144,13 +144,11 @@
                 <span class="total-text">共{{ pageTotal }}条</span>
                 <el-pagination
                     background
-                    layout="prev, pager, next, sizes, jumper"
+                    layout="prev, pager, next, jumper"
                     :current-page="query.pageIndex"
                     :page-size="query.pageSize"
-                    :page-sizes="[10, 20, 50, 100]"
                     :total="pageTotal"
                     @current-change="handlePageChange"
-                    @size-change="handleSizeChange"
                 />
                 <span class="page-suffix">页</span>
             </div>
@@ -183,11 +181,11 @@ const isSupplier = computed(() => permissStore.isSupplier);
 const getCurrentDealerName = computed((): string => {
     if (permissStore.isAdmin) {
         // 供应商总览（index === 0）返回空字符串，查询所有
-        if (sidebarStore.activeSupplier?.index === 0) {
+        if (!sidebarStore.activeSupplier || sidebarStore.activeSupplier.index === 0) {
             return '';
         }
-        // 特定供应商返回其名称
-        return sidebarStore.currentSupplierInfo?.name || '';
+        // 特定供应商：优先使用 activeSupplier.name，其次使用 currentSupplierInfo.name
+        return sidebarStore.activeSupplier.name || sidebarStore.currentSupplierInfo?.name || '';
     }
     // 供应商视图：返回当前供应商名称
     return sidebarStore.currentSupplierInfo?.name || '';
@@ -254,16 +252,27 @@ const fetchOrders = async () => {
         console.log('订单查询参数:', params);
 
         const response = await searchOrders(params);
+        console.log('订单查询响应:', response);
         
         if (response.code === 200 && response.data) {
-            tableData.value = transformOrderData(response.data.list);
-            pageTotal.value = response.data.total;
-            console.log('订单数据:', tableData.value);
+            // 确保 list 存在且为数组
+            const list = response.data.list || [];
+            tableData.value = transformOrderData(list);
+            pageTotal.value = response.data.total || 0;
+            console.log('订单数据:', tableData.value, '总数:', pageTotal.value);
         } else {
-            ElMessage.error(response.msg || '获取订单数据失败');
+            // 清空表格数据
+            tableData.value = [];
+            pageTotal.value = 0;
+            if (response.msg) {
+                ElMessage.error(response.msg);
+            }
         }
     } catch (error) {
         console.error('获取订单数据失败:', error);
+        // 清空表格数据
+        tableData.value = [];
+        pageTotal.value = 0;
         ElMessage.error('网络错误，请稍后重试');
     } finally {
         loading.value = false;
