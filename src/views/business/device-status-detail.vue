@@ -412,6 +412,23 @@ const deviceDetail = reactive({
     monthTraffic: '-'
 });
 
+// 故障记录数据（从API获取）- 提前声明以避免初始化顺序问题
+const faultRecords = ref<Array<{
+    time: string;
+    type: string;
+    status: string;
+    repairTime: string;
+}>>([]);
+
+// 维护记录数据（从API获取）- 提前声明以避免初始化顺序问题
+const maintenanceRecords = ref<Array<{
+    time: string;
+    type: string;
+    usage: string;
+    remark: string;
+    result: string;
+}>>([]);
+
 // ========== 数据重置函数 ==========
 
 /**
@@ -658,14 +675,6 @@ const filteredMaintenanceRecords = computed(() => {
     return maintenanceRecords.value.filter(record => record.type === activeMaintenanceFilter.value);
 });
 
-// 故障记录数据（从API获取）
-const faultRecords = ref<Array<{
-    time: string;
-    type: string;
-    status: string;
-    repairTime: string;
-}>>([]);
-
 /**
  * 获取故障记录数据
  * @param deviceCode 设备编码
@@ -693,15 +702,6 @@ const fetchFaultRecords = async (deviceCode: string) => {
         faultRecords.value = [];
     }
 };
-
-// 维护记录数据（从API获取）
-const maintenanceRecords = ref<Array<{
-    time: string;
-    type: string;
-    usage: string;
-    remark: string;
-    result: string;
-}>>([]);
 
 /**
  * 获取维护记录数据

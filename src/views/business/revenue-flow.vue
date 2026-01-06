@@ -379,6 +379,7 @@ const totalFlowHeaderLabel = computed<string>(() => {
  * 使用新接口 GET /dm/revenue/device-revenue-flow
  * 接口直接返回按设备聚合好的数据
  * 当选中"供应商总览"时，不传 dealerName 参数，查询全部供应商数据
+ * 当选中设备时，传 deviceCode 参数查询单个设备的数据
  */
 const fetchDeviceRevenueFlow = async () => {
     tableLoading.value = true;
@@ -386,13 +387,23 @@ const fetchDeviceRevenueFlow = async () => {
         // 获取当前选中的供应商名称（供应商总览时为 null/undefined）
         const dealerName = sidebarStore.currentSupplierInfo?.name;
         
+        // 获取当前选中设备的 deviceCode
+        const activeDevice = sidebarStore.activeDevice;
+        let deviceCode: string | undefined;
+        
+        // 如果选中了设备，从设备列表中找到对应的 deviceCode
+        if (activeDevice) {
+            const device = sidebarStore.deviceList.find(d => d.id === activeDevice.id);
+            deviceCode = device?.deviceCode;
+        }
+        
         // 转换时间范围参数
         const dateRange = timeRangeParamMap[tableTimeRange.value];
         
-        console.log('请求设备详细金额, dealerName:', dealerName || '全部供应商', 'dateRange:', dateRange);
+        console.log('请求设备详细金额, dealerName:', dealerName || '全部供应商', 'deviceCode:', deviceCode || '无', 'dateRange:', dateRange);
         
-        // dealerName 为可选参数，不传则查询全部供应商
-        const res = await getDeviceDetailAmount(dateRange, dealerName);
+        // dealerName 和 deviceCode 为可选参数
+        const res = await getDeviceDetailAmount(dateRange, dealerName, deviceCode);
         console.log('设备详细金额响应:', res);
         
         if (res.code === 200 && res.data && res.data.list) {
@@ -492,15 +503,29 @@ const generateRankingList = (devices: DeviceDetailAmountItem[]): RankingItem[] =
 /**
  * 获取近7天营收数据
  * 调用 getDeviceDetailAmount API，参数 dateRange='last7days'
+ * 根据当前选中的供应商和设备发送请求
+ * - 当选中设备时，传 deviceCode 参数查询单个设备的数据
+ * - 当选中供应商时，传 dealerName 参数查询该供应商的数据
+ * - 当选中"供应商总览"时，不传参数，查询全部供应商数据
  */
 const fetchWeeklyRevenueData = async () => {
     try {
         // 获取当前选中的供应商名称
         const dealerName = sidebarStore.currentSupplierInfo?.name;
         
-        console.log('请求近7天营收数据, dealerName:', dealerName || '全部供应商');
+        // 获取当前选中设备的deviceCode
+        const activeDevice = sidebarStore.activeDevice;
+        let deviceCode: string | undefined;
         
-        const res = await getDeviceDetailAmount('last7days', dealerName);
+        // 如果选中了设备，从设备列表中找到对应的deviceCode
+        if (activeDevice) {
+            const device = sidebarStore.deviceList.find(d => d.id === activeDevice.id);
+            deviceCode = device?.deviceCode;
+        }
+        
+        console.log('请求近7天营收数据, dealerName:', dealerName || '全部供应商', 'deviceCode:', deviceCode || '无');
+        
+        const res = await getDeviceDetailAmount('last7days', dealerName, deviceCode);
         console.log('近7天营收数据响应:', res);
         
         if (res.code === 200 && res.data && res.data.list) {
@@ -560,21 +585,33 @@ const fetchYesterdayRankingData = async () => {
 
 /**
  * 获取订单统计数据（成交金额、成交人数）
- * 根据当前选中的供应商发送请求
- * 当选中"供应商总览"时，不传 dealerName 参数，查询全部供应商数据
+ * 根据当前选中的供应商和设备发送请求
+ * - 当选中设备时，传 deviceCode 参数查询单个设备的统计数据
+ * - 当选中供应商时，传 dealerName 参数查询该供应商的统计数据
+ * - 当选中"供应商总览"时，不传参数，查询全部供应商数据
  */
 const fetchOrderStatistics = async () => {
     try {
         // 获取当前选中的供应商名称（供应商总览时为 null/undefined）
         const dealerName = sidebarStore.currentSupplierInfo?.name;
         
+        // 获取当前选中设备的deviceCode
+        const activeDevice = sidebarStore.activeDevice;
+        let deviceCode: string | undefined;
+        
+        // 如果选中了设备，从设备列表中找到对应的deviceCode
+        if (activeDevice) {
+            const device = sidebarStore.deviceList.find(d => d.id === activeDevice.id);
+            deviceCode = device?.deviceCode;
+        }
+        
         // 固定使用 today 作为时间范围
         const timeRange = 'today';
         
-        console.log('请求订单统计, dealerName:', dealerName || '全部供应商', 'timeRange:', timeRange);
+        console.log('请求订单统计, dealerName:', dealerName || '全部供应商', 'timeRange:', timeRange, 'deviceCode:', deviceCode || '无');
         
         // dealerName 为可选参数，不传则查询全部供应商
-        const res = await getOrderStatistics(dealerName, timeRange);
+        const res = await getOrderStatistics(dealerName, timeRange, deviceCode);
         console.log('订单统计响应:', res);
         
         if (res.code === 200 && res.data) {
@@ -589,16 +626,27 @@ const fetchOrderStatistics = async () => {
 
 /**
  * 获取账户总营收金额
- * 根据当前选中的供应商发送请求
- * 当选中"供应商总览"时，不传 dealerName 参数，查询全部供应商数据
+ * 根据当前选中的供应商或设备发送请求
+ * - 当选中设备时，传 deviceCode 参数查询单个设备的账户金额
+ * - 当选中供应商时，传 dealerName 参数查询该供应商的账户金额
+ * - 当选中"供应商总览"时，不传参数，查询全部供应商数据
  */
 const fetchTotalRevenue = async () => {
     try {
         const dealerName = sidebarStore.currentSupplierInfo?.name;
+        // 获取当前选中设备的deviceCode
+        const activeDevice = sidebarStore.activeDevice;
+        let deviceCode: string | undefined;
         
-        console.log('请求总营收, dealerName:', dealerName || '全部供应商');
+        // 如果选中了设备，从设备列表中找到对应的deviceCode
+        if (activeDevice) {
+            const device = sidebarStore.deviceList.find(d => d.id === activeDevice.id);
+            deviceCode = device?.deviceCode;
+        }
         
-        const res = await getTotalRevenue(dealerName);
+        console.log('请求总营收, dealerName:', dealerName || '全部供应商', 'deviceCode:', deviceCode || '无');
+        
+        const res = await getTotalRevenue(dealerName, deviceCode);
         console.log('总营收响应:', res);
         
         if (res.code === 200) {
@@ -628,6 +676,26 @@ watch(
         fetchYesterdayRankingData();
         // 供应商变化时重新获取总营收
         fetchTotalRevenue();
+    },
+    { deep: true }
+);
+
+// 监听设备变化，重新获取账户总营收和实时营收数据
+// 当点击左侧导航栏的设备时，携带deviceCode参数查询该设备的数据
+watch(
+    () => sidebarStore.activeDevice,
+    (newVal, oldVal) => {
+        console.log('设备变化:', newVal);
+        // 设备变化时重新获取总营收（携带deviceCode参数）
+        fetchTotalRevenue();
+        // 设备变化时重新获取当天订单流水数据（实时营收折线图）
+        fetchTodayOrders();
+        // 设备变化时重新获取订单统计（成交金额、成交人数）
+        fetchOrderStatistics();
+        // 设备变化时重新获取近7天营收数据（携带deviceCode参数）
+        fetchWeeklyRevenueData();
+        // 设备变化时重新获取表格数据（携带deviceCode参数）
+        fetchDeviceRevenueFlow();
     },
     { deep: true }
 );
@@ -787,16 +855,28 @@ const updateRealtimeChart = () => {
 
 /**
  * 获取当天订单流水数据
- * 根据当前选中的供应商发送请求
+ * 根据当前选中的供应商和设备发送请求
+ * - 当选中设备时，传 deviceCode 参数查询单个设备的订单流水
+ * - 当选中供应商时，传 dealerName 参数查询该供应商的订单流水
+ * - 当选中"供应商总览"时，不传参数，查询全部供应商数据
  */
 const fetchTodayOrders = async () => {
     try {
         // 获取当前选中的供应商名称
         const dealerName = sidebarStore.currentSupplierInfo?.name;
+        // 获取当前选中设备的deviceCode
+        const activeDevice = sidebarStore.activeDevice;
+        let deviceCode: string | undefined;
         
-        console.log('请求当天订单流水, dealerName:', dealerName || '全部供应商');
+        // 如果选中了设备，从设备列表中找到对应的deviceCode
+        if (activeDevice) {
+            const device = sidebarStore.deviceList.find(d => d.id === activeDevice.id);
+            deviceCode = device?.deviceCode;
+        }
         
-        const res = await getTodayOrders(dealerName);
+        console.log('请求当天订单流水, dealerName:', dealerName || '全部供应商', 'deviceCode:', deviceCode || '无');
+        
+        const res = await getTodayOrders(dealerName, deviceCode);
         console.log('当天订单流水响应:', res);
         
         if (res.code === 200 && res.data) {

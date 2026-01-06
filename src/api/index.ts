@@ -475,12 +475,16 @@ export interface DeviceDetailAmountResponse {
  * 查询设备详细金额接口
  * @param dateRange 时间范围（必填）: yesterday-昨天, last7days-近7天, last30days-近30天
  * @param dealerName 供应商名称（可选，如 "tinghua"，不传则查询全部供应商）
+ * @param deviceCode 设备编码（可选，传入则查询单个设备的数据）
  * @returns Promise<DeviceDetailAmountResponse> 返回设备详细金额列表
  */
-export const getDeviceDetailAmount = (dateRange: string, dealerName?: string): Promise<DeviceDetailAmountResponse> => {
-    const params: { dateRange: string; dealerName?: string } = { dateRange };
+export const getDeviceDetailAmount = (dateRange: string, dealerName?: string, deviceCode?: string): Promise<DeviceDetailAmountResponse> => {
+    const params: { dateRange: string; dealerName?: string; deviceCode?: string } = { dateRange };
     if (dealerName) {
         params.dealerName = dealerName;
+    }
+    if (deviceCode) {
+        params.deviceCode = deviceCode;
     }
     return request({
         url: 'https://culture.xianzanwl.com/dm/revenue/device-revenue-flow',
@@ -525,15 +529,19 @@ export interface OrderStatisticsResponse {
  * 获取订单统计接口
  * @param dealerName 供应商名称（可选，如 "tinghua"）
  * @param timeRange 时间范围（可选，如 "today"）
+ * @param deviceCode 设备编码（可选，传入则查询单个设备的统计数据）
  * @returns Promise<OrderStatisticsResponse> 返回订单统计数据
  */
-export const getOrderStatistics = (dealerName?: string, timeRange?: string): Promise<OrderStatisticsResponse> => {
-    const data: { dealerName?: string; timeRange?: string } = {};
+export const getOrderStatistics = (dealerName?: string, timeRange?: string, deviceCode?: string): Promise<OrderStatisticsResponse> => {
+    const data: { dealerName?: string; timeRange?: string; deviceCode?: string } = {};
     if (dealerName) {
         data.dealerName = dealerName;
     }
     if (timeRange) {
         data.timeRange = timeRange;
+    }
+    if (deviceCode) {
+        data.deviceCode = deviceCode;
     }
     return request({
         url: 'https://culture.xianzanwl.com/dm/order/statistics',
@@ -577,12 +585,16 @@ export interface TodayOrdersResponse {
 /**
  * 获取当天订单流水接口
  * @param dealerName 供应商名称（可选，如 "tinghua"，不传则查询全部供应商）
+ * @param deviceCode 设备编码（可选，传入则查询单个设备的订单流水）
  * @returns Promise<TodayOrdersResponse> 返回当天订单流水列表
  */
-export const getTodayOrders = (dealerName?: string): Promise<TodayOrdersResponse> => {
-    const params: { dealerName?: string } = {};
+export const getTodayOrders = (dealerName?: string, deviceCode?: string): Promise<TodayOrdersResponse> => {
+    const params: { dealerName?: string; deviceCode?: string } = {};
     if (dealerName) {
         params.dealerName = dealerName;
+    }
+    if (deviceCode) {
+        params.deviceCode = deviceCode;
     }
     return request({
         url: 'https://culture.xianzanwl.com/dm/revenue/today-orders',
@@ -657,6 +669,7 @@ export interface OrderSearchParams {
     orderName?: string;      // 风格类型（可选筛选）：如"萌化贴纸"、"文旅AI"等
     startDate?: string;      // 开始日期（可选筛选）
     endDate?: string;        // 结束日期（可选筛选）
+    deviceCode?: string;     // 设备编码（可选筛选）
 }
 
 /**
@@ -697,16 +710,90 @@ export interface TotalRevenueResponse {
 /**
  * 获取总营收接口
  * @param dealerName 供应商名称（可选，如 "tinghua"，不传则查询全部供应商）
+ * @param deviceCode 设备编码（可选，传入则查询单个设备的账户金额）
  * @returns Promise<TotalRevenueResponse> 返回总营收金额
  */
-export const getTotalRevenue = (dealerName?: string): Promise<TotalRevenueResponse> => {
-    const params: { dealerName?: string } = {};
+export const getTotalRevenue = (dealerName?: string, deviceCode?: string): Promise<TotalRevenueResponse> => {
+    const params: { dealerName?: string; deviceCode?: string } = {};
     if (dealerName) {
         params.dealerName = dealerName;
+    }
+    if (deviceCode) {
+        params.deviceCode = deviceCode;
     }
     return request({
         url: 'https://culture.xianzanwl.com/dm/revenue/total',
         method: 'get',
         params
+    });
+};
+
+
+/**
+ * 设备部件信息接口
+ * @description 设备部件状态数据
+ */
+export interface DevicePartInfo {
+    partId: number;        // 部件ID
+    partName: string;      // 部件名称
+    partNum: number;       // 当前值
+    partTotal: number;     // 总值
+    partStatus: string;    // 状态
+}
+
+/**
+ * 设备器械详细信息接口
+ * @description 获取设备器械信息接口返回的数据结构
+ * 
+ * 接口地址: GET https://culture.xianzanwl.com/dm/device/{code}
+ * 接口ID: 275821756
+ */
+export interface DeviceInfoData {
+    deviceCode: string;           // 设备编码
+    deviceName: string;           // 设备名称
+    deviceStatus: string;         // 设备状态：运行中、离线中
+    deviceAddress: string;        // 设备地址
+    softwareVersion: string;      // 软件版本
+    hardwareVersion: string;      // 硬件版本
+    networkCarrier: string;       // 网络运营商
+    totalTraffic: number | null;  // 总流量
+    monthlyTraffic: number | null;// 月流量
+    partList: DevicePartInfo[];   // 部件列表
+}
+
+/**
+ * 设备器械信息响应接口
+ */
+export interface DeviceInfoResponse {
+    code: number;
+    msg: string;
+    data: DeviceInfoData | null;
+    trackId?: string;
+}
+
+/**
+ * 获取设备器械信息接口
+ * @param deviceCode 设备编码（必填）
+ * @returns Promise<DeviceInfoResponse> 返回设备器械详细信息
+ * @description
+ * 接口地址: GET https://culture.xianzanwl.com/dm/device/{code}
+ * 接口ID: 275821756
+ * 
+ * 返回字段说明:
+ * - deviceCode: 设备编码
+ * - deviceName: 设备名称
+ * - deviceStatus: 设备状态（运行中/离线中）
+ * - deviceAddress: 设备安装地址
+ * - softwareVersion: 软件版本号
+ * - hardwareVersion: 硬件版本号
+ * - networkCarrier: 网络运营商
+ * - totalTraffic: 总流量
+ * - monthlyTraffic: 月流量
+ * - partList: 设备部件状态列表
+ */
+export const getDeviceInfo = (deviceCode: string): Promise<DeviceInfoResponse> => {
+    return request({
+        url: `https://culture.xianzanwl.com/dm/device/${deviceCode}`,
+        method: 'get'
     });
 };

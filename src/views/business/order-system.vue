@@ -1,33 +1,35 @@
 <template>
     <div class="container" :class="{ 'supplier-container': isSupplier }">
         <!-- 供应商视图：顶部设备信息卡片 -->
-        <div v-if="isSupplier" class="device-info-card">
+        <div v-if="isSupplier" class="device-info-card" v-loading="deviceInfoLoading">
             <div class="device-main">
                 <div class="device-header">
-                    <span class="device-code">WOA00001</span>
-                    <el-tag type="success" size="small" class="status-tag">运行中</el-tag>
+                    <span class="device-code">{{ deviceInfo.deviceCode }}</span>
+                    <el-tag :type="getStatusTagType(deviceInfo.deviceStatus)" size="small" class="status-tag">
+                        {{ deviceInfo.deviceStatus }}
+                    </el-tag>
                 </div>
-                <div class="device-id">ID: XXXX</div>
+                <div class="device-id">ID: {{ deviceInfo.deviceName || '--' }}</div>
             </div>
             <div class="device-detail">
                 <el-icon><Location /></el-icon>
                 <div class="detail-content">
                     <div class="detail-label">设备地址</div>
-                    <div class="detail-value">新天地广场3F</div>
+                    <div class="detail-value">{{ deviceInfo.deviceAddress }}</div>
                 </div>
             </div>
             <div class="device-detail">
                 <el-icon><Monitor /></el-icon>
                 <div class="detail-content">
                     <div class="detail-label">软件版本</div>
-                    <div class="detail-value">V-11.32.69</div>
+                    <div class="detail-value">{{ deviceInfo.softwareVersion }}</div>
                 </div>
             </div>
             <div class="device-detail">
                 <el-icon><Setting /></el-icon>
                 <div class="detail-content">
                     <div class="detail-label">硬件版本</div>
-                    <div class="detail-value">H-01.22.35b</div>
+                    <div class="detail-value">{{ deviceInfo.hardwareVersion }}</div>
                 </div>
             </div>
         </div>
@@ -162,8 +164,18 @@ import { ElMessage } from 'element-plus';
 import { Download, DocumentCopy, Location, Monitor, Setting } from '@element-plus/icons-vue';
 import { usePermissStore } from '@/store/permiss';
 import { useSidebarStore } from '@/store/sidebar';
-import { searchOrders, type OrderSearchParams } from '@/api/index';
+import { searchOrders, getDeviceInfo, type OrderSearchParams, type DeviceInfoData } from '@/api/index';
 import { transformOrderData, mapStatusToOrderType, mapPayMethodToPayCode, mapStyleTypeToOrderName, type OrderItem } from '@/utils/order-transform';
+
+// 设备信息展示数据接口
+interface DeviceDisplayInfo {
+    deviceCode: string;
+    deviceName: string;
+    deviceStatus: string;
+    deviceAddress: string;
+    softwareVersion: string;
+    hardwareVersion: string;
+}
 
 // 权限store
 const permissStore = usePermissStore();
@@ -171,6 +183,88 @@ const permissStore = usePermissStore();
 const sidebarStore = useSidebarStore();
 // 是否为供应商
 const isSupplier = computed(() => permissStore.isSupplier);
+
+// 设备信息数据
+const deviceInfo = ref<DeviceDisplayInfo>({
+    deviceCode: '--',
+    deviceName: '--',
+    deviceStatus: '未知',
+    deviceAddress: '--',
+    softwareVersion: '--',
+    hardwareVersion: '--'
+});
+const deviceInfoLoading = ref(false);
+
+// 获取状态标签类型
+const getStatusTagType = (status: string): string => {
+    if (status === '运行中') return 'success';
+    if (status === '离线中') return 'info';
+    return 'warning';
+};
+
+// 从 sidebar store 获取当前设备编码（供应商视图）
+const currentDeviceCode = computed(() => {
+    if (!isSupplier.value) return '';
+    
+    // 优先从 activeDevice 获取设备信息
+    if (sidebarStore.activeDevice) {
+        const deviceList = sidebarStore.deviceList;
+        const activeDeviceId = sidebarStore.activeDevice.id;
+        const device = deviceList.find(d => d.id === activeDeviceId);
+        if (device?.deviceCode) {
+            return device.deviceCode;
+        }
+    }
+    // 如果没有选中设备，返回设备列表第一个设备的编码
+    if (sidebarStore.deviceList.length > 0) {
+        return sidebarStore.deviceList[0].deviceCode;
+    }
+    return '';
+});
+
+// 获取设备信息
+const fetchDeviceInfo = async () => {
+    if (!currentDeviceCode.value || !isSupplier.value) return;
+    
+    deviceInfoLoading.value = true;
+    try {
+        const res = await getDeviceInfo(currentDeviceCode.value);
+        if (res.code === 200 && res.data) {
+            deviceInfo.value = {
+                deviceCode: res.data.deviceCode || '--',
+                deviceName: res.data.deviceName || '--',
+                deviceStatus: res.data.deviceStatus || '未知',
+                deviceAddress: res.data.deviceAddress || '--',
+                softwareVersion: res.data.softwareVersion || '--',
+                hardwareVersion: res.data.hardwareVersion || '--'
+            };
+        } else {
+            console.error('获取设备信息失败:', res.msg);
+            // 重置为默认值
+            deviceInfo.value = {
+                deviceCode: '--',
+                deviceName: '--',
+                deviceStatus: '未知',
+                deviceAddress: '--',
+                softwareVersion: '--',
+                hardwareVersion: '--'
+            };
+        }
+    } catch (error) {
+        console.error('获取设备信息失败:', error);
+        // 重置为默认值
+        deviceInfo.value = {
+            deviceCode: '--',
+            deviceName: '--',
+            deviceStatus: '未知',
+            deviceAddress: '--',
+            softwareVersion: '--',
+            hardwareVersion: '--'
+        };
+    } finally {
+        deviceInfoLoading.value = false;
+    }
+};
 
 /**
  * 获取当前选中的供应商名称
@@ -211,6 +305,7 @@ const loading = ref(false);
 /**
  * 获取订单数据
  * 根据当前供应商选择和筛选条件查询订单
+ * 供应商视图下会根据当前选中的设备进行筛选
  */
 const fetchOrders = async () => {
     loading.value = true;
@@ -221,6 +316,11 @@ const fetchOrders = async () => {
             pageNum: query.pageIndex,
             pageSize: query.pageSize
         };
+
+        // 供应商视图下添加设备编码筛选
+        if (isSupplier.value && currentDeviceCode.value) {
+            params.deviceCode = currentDeviceCode.value;
+        }
 
         // 添加筛选条件
         if (query.orderNo) {
@@ -291,9 +391,51 @@ watch(
     { deep: true }
 );
 
+// 监听设备编码变化（供应商视图），重新获取设备信息和订单数据
+watch(currentDeviceCode, (newCode, oldCode) => {
+    console.log('currentDeviceCode 变化:', oldCode, '->', newCode);
+    if (newCode && isSupplier.value) {
+        fetchDeviceInfo();
+        // 重置页码并刷新订单数据
+        query.pageIndex = 1;
+        fetchOrders();
+    }
+});
+
+// 监听 activeDevice 变化（处理点击导航栏的情况）
+watch(
+    () => sidebarStore.activeDevice?.id,
+    (newId, oldId) => {
+        console.log('activeDevice.id 变化:', oldId, '->', newId);
+        if (newId && newId !== oldId && isSupplier.value) {
+            fetchDeviceInfo();
+            // 重置页码并刷新订单数据
+            query.pageIndex = 1;
+            fetchOrders();
+        }
+    }
+);
+
 // 页面初始化时获取订单数据
 onMounted(() => {
     fetchOrders();
+    // 供应商视图时获取设备信息
+    if (isSupplier.value) {
+        if (sidebarStore.deviceList.length === 0) {
+            // 等待 sidebar 数据加载完成
+            const unwatch = watch(() => sidebarStore.deviceList, (list) => {
+                if (list.length > 0) {
+                    console.log('设备列表已加载:', list);
+                    unwatch();
+                    if (currentDeviceCode.value) {
+                        fetchDeviceInfo();
+                    }
+                }
+            }, { immediate: true });
+        } else if (currentDeviceCode.value) {
+            fetchDeviceInfo();
+        }
+    }
 });
 
 // 获取状态文本
