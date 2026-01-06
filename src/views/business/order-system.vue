@@ -1,7 +1,7 @@
 <template>
-    <div class="container" :class="{ 'supplier-container': isSupplier }">
-        <!-- 供应商视图：顶部设备信息卡片 -->
-        <div v-if="isSupplier" class="device-info-card" v-loading="deviceInfoLoading">
+    <div class="container" :class="{ 'supplier-container': showDeviceCard }">
+        <!-- 设备信息卡片：供应商视图 或 管理员选择了具体设备时显示 -->
+        <div v-if="showDeviceCard" class="device-info-card" v-loading="deviceInfoLoading">
             <div class="device-main">
                 <div class="device-header">
                     <span class="device-code">{{ deviceInfo.deviceCode }}</span>
@@ -35,12 +35,12 @@
         </div>
 
         <!-- 订单管理区域 -->
-        <div :class="isSupplier ? 'order-section' : ''">
+        <div :class="showDeviceCard ? 'order-section' : ''">
             <!-- 页面标题 -->
             <div class="page-header">
                 <span class="header-icon">|</span>
                 <span class="header-title">订单管理</span>
-                <el-icon v-if="isSupplier" class="export-icon"><Download /></el-icon>
+                <el-icon v-if="showDeviceCard" class="export-icon"><Download /></el-icon>
                 <el-button v-else class="export-btn" :icon="Download" circle />
             </div>
 
@@ -56,7 +56,7 @@
                             start-placeholder="开始日期"
                             end-placeholder="结束日期"
                             value-format="YYYY/MM/DD"
-                            :style="{ width: isSupplier ? '220px' : '240px' }"
+                            :style="{ width: showDeviceCard ? '220px' : '240px' }"
                         />
                     </div>
                     <div class="filter-item">
@@ -65,12 +65,12 @@
                             v-model="query.orderNo" 
                             placeholder="请输入"
                             clearable
-                            :style="{ width: isSupplier ? '160px' : '200px' }"
+                            :style="{ width: showDeviceCard ? '160px' : '200px' }"
                         />
                     </div>
                     <div class="filter-item">
                         <span class="filter-label">订单状态</span>
-                        <el-select v-model="query.status" placeholder="请选择" clearable :style="{ width: isSupplier ? '120px' : '150px' }">
+                        <el-select v-model="query.status" placeholder="请选择" clearable :style="{ width: showDeviceCard ? '120px' : '150px' }">
                             <el-option label="全部" value=""></el-option>
                             <el-option label="已完成" value="completed"></el-option>
                             <el-option label="退款成功" value="refunded"></el-option>
@@ -78,7 +78,7 @@
                     </div>
                     <div class="filter-item">
                         <span class="filter-label">风格类型</span>
-                        <el-select v-model="query.styleType" placeholder="请选择" clearable :style="{ width: isSupplier ? '120px' : '150px' }">
+                        <el-select v-model="query.styleType" placeholder="请选择" clearable :style="{ width: showDeviceCard ? '120px' : '150px' }">
                             <el-option label="全部" value=""></el-option>
                             <el-option label="萌化贴纸" value="cute"></el-option>
                         </el-select>
@@ -87,7 +87,7 @@
                 <div class="filter-row">
                     <div class="filter-item">
                         <span class="filter-label">支付方式</span>
-                        <el-select v-model="query.payMethod" placeholder="请选择" clearable :style="{ width: isSupplier ? '120px' : '150px' }">
+                        <el-select v-model="query.payMethod" placeholder="请选择" clearable :style="{ width: showDeviceCard ? '120px' : '150px' }">
                             <el-option label="全部" value=""></el-option>
                             <el-option label="支付宝" value="alipay"></el-option>
                             <el-option label="微信" value="wechat"></el-option>
@@ -107,32 +107,32 @@
                 header-cell-class-name="table-header"
                 v-loading="loading"
             >
-                <el-table-column prop="deviceName" label="设备名称" align="center" :min-width="isSupplier ? 120 : undefined">
+                <el-table-column prop="deviceName" label="设备名称" align="center" :min-width="showDeviceCard ? 120 : undefined">
                     <template #default="scope">
                         <span class="device-indicator"></span>
                         <span>{{ scope.row.deviceName }}</span>
                     </template>
                 </el-table-column>
-                <el-table-column prop="orderNo" label="订单编号" align="center" :min-width="isSupplier ? 200 : undefined">
+                <el-table-column prop="orderNo" label="订单编号" align="center" :min-width="showDeviceCard ? 200 : undefined">
                     <template #default="scope">
                         <span>{{ scope.row.orderNo }}</span>
                         <el-icon class="copy-icon" @click="handleCopy(scope.row.orderNo)"><DocumentCopy /></el-icon>
                     </template>
                 </el-table-column>
-                <el-table-column prop="createTime" label="下单时间" align="center" :min-width="isSupplier ? 160 : undefined"></el-table-column>
-                <el-table-column prop="styleType" label="风格类型" align="center" :min-width="isSupplier ? 100 : undefined">
+                <el-table-column prop="createTime" label="下单时间" align="center" :min-width="showDeviceCard ? 160 : undefined"></el-table-column>
+                <el-table-column prop="styleType" label="风格类型" align="center" :min-width="showDeviceCard ? 100 : undefined">
                     <template #default="scope">
                         <span>{{ scope.row.styleType || '-' }}</span>
                     </template>
                 </el-table-column>
-                <el-table-column prop="amount" label="单价" align="center" :min-width="isSupplier ? 100 : undefined">
+                <el-table-column prop="amount" label="单价" align="center" :min-width="showDeviceCard ? 100 : undefined">
                     <template #default="scope">
                         <span v-if="scope.row.amount">¥{{ scope.row.amount.toFixed(2) }}</span>
                         <span v-else>-</span>
                     </template>
                 </el-table-column>
-                <el-table-column prop="payMethod" label="支付方式" align="center" :min-width="isSupplier ? 100 : undefined"></el-table-column>
-                <el-table-column prop="status" label="订单状态" align="center" :min-width="isSupplier ? 100 : undefined">
+                <el-table-column prop="payMethod" label="支付方式" align="center" :min-width="showDeviceCard ? 100 : undefined"></el-table-column>
+                <el-table-column prop="status" label="订单状态" align="center" :min-width="showDeviceCard ? 100 : undefined">
                     <template #default="scope">
                         <span :class="['status-text', scope.row.status]">
                             {{ getStatusText(scope.row.status) }}
@@ -183,6 +183,13 @@ const permissStore = usePermissStore();
 const sidebarStore = useSidebarStore();
 // 是否为供应商
 const isSupplier = computed(() => permissStore.isSupplier);
+// 是否为管理员
+const isAdmin = computed(() => permissStore.isAdmin);
+
+// 是否显示设备信息卡片（供应商视图 或 管理员选择了具体设备）
+const showDeviceCard = computed(() => {
+    return isSupplier.value || (isAdmin.value && sidebarStore.activeDevice !== null);
+});
 
 // 设备信息数据
 const deviceInfo = ref<DeviceDisplayInfo>({
@@ -202,8 +209,21 @@ const getStatusTagType = (status: string): string => {
     return 'warning';
 };
 
-// 从 sidebar store 获取当前设备编码（供应商视图）
+// 从 sidebar store 获取当前设备编码（供应商视图 或 管理员选择设备时）
 const currentDeviceCode = computed(() => {
+    // 管理员视图：从 activeDevice 获取设备编码
+    if (isAdmin.value && sidebarStore.activeDevice) {
+        // 从供应商列表中查找设备的 deviceCode
+        for (const supplier of sidebarStore.supplierList) {
+            const device = supplier.devices?.find(d => d.id === sidebarStore.activeDevice?.id);
+            if (device?.deviceCode) {
+                return device.deviceCode;
+            }
+        }
+        return '';
+    }
+    
+    // 供应商视图
     if (!isSupplier.value) return '';
     
     // 优先从 activeDevice 获取设备信息
@@ -224,7 +244,8 @@ const currentDeviceCode = computed(() => {
 
 // 获取设备信息
 const fetchDeviceInfo = async () => {
-    if (!currentDeviceCode.value || !isSupplier.value) return;
+    // 供应商视图 或 管理员选择了设备时才获取设备信息
+    if (!currentDeviceCode.value || (!isSupplier.value && !sidebarStore.activeDevice)) return;
     
     deviceInfoLoading.value = true;
     try {
@@ -321,6 +342,11 @@ const fetchOrders = async () => {
         if (isSupplier.value && currentDeviceCode.value) {
             params.deviceCode = currentDeviceCode.value;
         }
+        
+        // 管理员选择了具体设备时添加设备编码筛选
+        if (isAdmin.value && sidebarStore.activeDevice && currentDeviceCode.value) {
+            params.deviceCode = currentDeviceCode.value;
+        }
 
         // 添加筛选条件
         if (query.orderNo) {
@@ -391,10 +417,10 @@ watch(
     { deep: true }
 );
 
-// 监听设备编码变化（供应商视图），重新获取设备信息和订单数据
+// 监听设备编码变化（供应商视图 或 管理员选择设备），重新获取设备信息和订单数据
 watch(currentDeviceCode, (newCode, oldCode) => {
     console.log('currentDeviceCode 变化:', oldCode, '->', newCode);
-    if (newCode && isSupplier.value) {
+    if (newCode && (isSupplier.value || sidebarStore.activeDevice)) {
         fetchDeviceInfo();
         // 重置页码并刷新订单数据
         query.pageIndex = 1;
@@ -402,14 +428,27 @@ watch(currentDeviceCode, (newCode, oldCode) => {
     }
 });
 
-// 监听 activeDevice 变化（处理点击导航栏的情况）
+// 监听 activeDevice 变化（处理点击导航栏的情况，支持管理员和供应商）
 watch(
     () => sidebarStore.activeDevice?.id,
     (newId, oldId) => {
         console.log('activeDevice.id 变化:', oldId, '->', newId);
-        if (newId && newId !== oldId && isSupplier.value) {
+        if (newId && newId !== oldId) {
+            // 管理员或供应商选择设备时都需要刷新
             fetchDeviceInfo();
             // 重置页码并刷新订单数据
+            query.pageIndex = 1;
+            fetchOrders();
+        } else if (!newId && oldId && isAdmin.value) {
+            // 管理员取消选择设备时（选择了供应商或总览），重置设备信息并刷新订单
+            deviceInfo.value = {
+                deviceCode: '--',
+                deviceName: '--',
+                deviceStatus: '未知',
+                deviceAddress: '--',
+                softwareVersion: '--',
+                hardwareVersion: '--'
+            };
             query.pageIndex = 1;
             fetchOrders();
         }
@@ -435,6 +474,10 @@ onMounted(() => {
         } else if (currentDeviceCode.value) {
             fetchDeviceInfo();
         }
+    }
+    // 管理员视图且已选择设备时获取设备信息
+    if (isAdmin.value && sidebarStore.activeDevice && currentDeviceCode.value) {
+        fetchDeviceInfo();
     }
 });
 

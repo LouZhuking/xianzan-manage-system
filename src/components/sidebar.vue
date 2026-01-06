@@ -123,13 +123,9 @@ const permissStore = usePermissStore();
 // 判断是否为管理员（使用permiss store的角色判断）
 const isAdmin = computed(() => permissStore.isAdmin);
 
-// 定义仅供应商模式的路由列表
-const supplierOnlyRoutes = ['/revenue-flow', '/order-system'];
-
-// 计算当前是否为仅供应商模式（管理员 + 特定路由）
-const isSupplierOnlyMode = computed(() => {
-    return isAdmin.value && supplierOnlyRoutes.includes(route.path);
-});
+// 注意：已移除 supplierOnlyMode 限制，管理员在所有页面都可以展开供应商查看设备
+// 这样管理员可以在营收流水和订单系统页面选择具体设备查看数据
+const isSupplierOnlyMode = computed(() => false);
 
 // 数据加载状态
 const loading = computed(() => sidebarStore.loading);
@@ -174,13 +170,11 @@ const handleSupplierToggle = (supplierId: number) => {
         sidebarStore.setActiveSupplier(supplierIndex + 1, supplier.name);
         // 设置当前供应商信息，用于右侧页面显示
         sidebarStore.setCurrentSupplierInfo(supplier);
-        // 清除设备选中状态
+        // 清除设备选中状态（管理员选择供应商时清除之前选中的设备）
         sidebarStore.activeDevice = null;
         
-        // 仅在完整导航模式下切换展开状态
-        if (!isSupplierOnlyMode.value) {
-            sidebarStore.toggleSupplierExpand(supplierId);
-        }
+        // 切换展开状态
+        sidebarStore.toggleSupplierExpand(supplierId);
     }
 };
 
@@ -238,17 +232,10 @@ const initData = async () => {
     }
 };
 
-// 监听路由变化，处理模式切换
+// 监听路由变化
+// 注意：已移除 supplierOnlyMode 相关逻辑，管理员在所有页面都可以展开供应商
 watch(() => route.path, (newPath, oldPath) => {
-    if (!isAdmin.value) return;
-    
-    const wasSupplierOnly = supplierOnlyRoutes.includes(oldPath);
-    const isNowSupplierOnly = supplierOnlyRoutes.includes(newPath);
-    
-    // 从完整导航模式切换到仅供应商模式时，折叠所有展开的供应商
-    if (!wasSupplierOnly && isNowSupplierOnly) {
-        sidebarStore.collapseAllSuppliers();
-    }
+    // 路由变化时的其他处理逻辑可以在这里添加
 });
 
 onMounted(() => {

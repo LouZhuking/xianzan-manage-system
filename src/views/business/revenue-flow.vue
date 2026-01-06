@@ -2,6 +2,40 @@
     <div class="page-wrapper">
         <!-- 左侧主内容区 -->
         <div class="main-content">
+            <!-- 设备信息卡片：管理员选择了具体设备时显示 -->
+            <div v-if="showDeviceCard" class="device-info-card" v-loading="deviceInfoLoading">
+                <div class="device-main">
+                    <div class="device-header">
+                        <span class="device-code">{{ deviceInfo.deviceCode }}</span>
+                        <el-tag :type="getStatusTagType(deviceInfo.deviceStatus)" size="small" class="status-tag">
+                            {{ deviceInfo.deviceStatus }}
+                        </el-tag>
+                    </div>
+                    <div class="device-id">ID: {{ deviceInfo.deviceName || '--' }}</div>
+                </div>
+                <div class="device-detail">
+                    <el-icon><Location /></el-icon>
+                    <div class="detail-content">
+                        <div class="detail-label">设备地址</div>
+                        <div class="detail-value">{{ deviceInfo.deviceAddress }}</div>
+                    </div>
+                </div>
+                <div class="device-detail">
+                    <el-icon><Monitor /></el-icon>
+                    <div class="detail-content">
+                        <div class="detail-label">软件版本</div>
+                        <div class="detail-value">{{ deviceInfo.softwareVersion }}</div>
+                    </div>
+                </div>
+                <div class="device-detail">
+                    <el-icon><Setting /></el-icon>
+                    <div class="detail-content">
+                        <div class="detail-label">硬件版本</div>
+                        <div class="detail-value">{{ deviceInfo.hardwareVersion }}</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- 顶部账户信息栏 -->
             <div class="account-header">
                 <div class="account-icon">
@@ -259,11 +293,109 @@
 <script setup lang="ts" name="revenue-flow">
 import { ref, onMounted, watch, computed } from 'vue';
 import * as echarts from 'echarts';
-import { getDeviceDetailAmount, getOrderStatistics, getTodayOrders, getTotalRevenue, type DeviceDetailAmountItem, type OrderStatisticsData, type TodayOrderItem } from '@/api/index';
+import { Location, Monitor, Setting } from '@element-plus/icons-vue';
+import { getDeviceDetailAmount, getOrderStatistics, getTodayOrders, getTotalRevenue, getDeviceInfo, type DeviceDetailAmountItem, type OrderStatisticsData, type TodayOrderItem } from '@/api/index';
 import { useSidebarStore } from '@/store/sidebar';
+import { usePermissStore } from '@/store/permiss';
 
 // sidebar store
 const sidebarStore = useSidebarStore();
+// 权限store
+const permissStore = usePermissStore();
+
+// 是否为管理员
+const isAdmin = computed(() => permissStore.isAdmin);
+
+// 是否显示设备信息卡片（管理员选择了具体设备时显示）
+const showDeviceCard = computed(() => {
+    return isAdmin.value && sidebarStore.activeDevice !== null;
+});
+
+// 设备信息展示数据接口
+interface DeviceDisplayInfo {
+    deviceCode: string;
+    deviceName: string;
+    deviceStatus: string;
+    deviceAddress: string;
+    softwareVersion: string;
+    hardwareVersion: string;
+}
+
+// 设备信息数据
+const deviceInfo = ref<DeviceDisplayInfo>({
+    deviceCode: '--',
+    deviceName: '--',
+    deviceStatus: '未知',
+    deviceAddress: '--',
+    softwareVersion: '--',
+    hardwareVersion: '--'
+});
+const deviceInfoLoading = ref(false);
+
+// 获取状态标签类型
+const getStatusTagType = (status: string): string => {
+    if (status === '运行中') return 'success';
+    if (status === '离线中') return 'info';
+    return 'warning';
+};
+
+// 获取当前选中设备的deviceCode（管理员视图）
+const currentDeviceCode = computed(() => {
+    if (!isAdmin.value || !sidebarStore.activeDevice) return '';
+    
+    // 从供应商列表中查找设备的 deviceCode
+    for (const supplier of sidebarStore.supplierList) {
+        const device = supplier.devices?.find(d => d.id === sidebarStore.activeDevice?.id);
+        if (device?.deviceCode) {
+            return device.deviceCode;
+        }
+    }
+    return '';
+});
+
+// 获取设备信息
+const fetchDeviceInfo = async () => {
+    if (!currentDeviceCode.value || !sidebarStore.activeDevice) return;
+    
+    deviceInfoLoading.value = true;
+    try {
+        const res = await getDeviceInfo(currentDeviceCode.value);
+        if (res.code === 200 && res.data) {
+            deviceInfo.value = {
+                deviceCode: res.data.deviceCode || '--',
+                deviceName: res.data.deviceName || '--',
+                deviceStatus: res.data.deviceStatus || '未知',
+                deviceAddress: res.data.deviceAddress || '--',
+                softwareVersion: res.data.softwareVersion || '--',
+                hardwareVersion: res.data.hardwareVersion || '--'
+            };
+        } else {
+            console.error('获取设备信息失败:', res.msg);
+            // 重置为默认值
+            deviceInfo.value = {
+                deviceCode: '--',
+                deviceName: '--',
+                deviceStatus: '未知',
+                deviceAddress: '--',
+                softwareVersion: '--',
+                hardwareVersion: '--'
+            };
+        }
+    } catch (error) {
+        console.error('获取设备信息失败:', error);
+        // 重置为默认值
+        deviceInfo.value = {
+            deviceCode: '--',
+            deviceName: '--',
+            deviceStatus: '未知',
+            deviceAddress: '--',
+            softwareVersion: '--',
+            hardwareVersion: '--'
+        };
+    } finally {
+        deviceInfoLoading.value = false;
+    }
+};
 
 // 账户总金额
 const totalRevenue = ref<number>(0);
@@ -686,6 +818,20 @@ watch(
     () => sidebarStore.activeDevice,
     (newVal, oldVal) => {
         console.log('设备变化:', newVal);
+        // 管理员选择设备时获取设备信息
+        if (newVal && isAdmin.value) {
+            fetchDeviceInfo();
+        } else if (!newVal && oldVal && isAdmin.value) {
+            // 管理员取消选择设备时，重置设备信息
+            deviceInfo.value = {
+                deviceCode: '--',
+                deviceName: '--',
+                deviceStatus: '未知',
+                deviceAddress: '--',
+                softwareVersion: '--',
+                hardwareVersion: '--'
+            };
+        }
         // 设备变化时重新获取总营收（携带deviceCode参数）
         fetchTotalRevenue();
         // 设备变化时重新获取当天订单流水数据（实时营收折线图）
@@ -1486,6 +1632,10 @@ onMounted(() => {
     fetchYesterdayRankingData();
     // 获取账户总营收
     fetchTotalRevenue();
+    // 管理员视图且已选择设备时获取设备信息
+    if (isAdmin.value && sidebarStore.activeDevice && currentDeviceCode.value) {
+        fetchDeviceInfo();
+    }
 });
 </script>
 
@@ -1503,6 +1653,78 @@ onMounted(() => {
     display: flex;
     flex-direction: column;
     gap: 20px;
+}
+
+/* 设备信息卡片 - 管理员选择设备时显示 */
+.device-info-card {
+    display: flex;
+    align-items: center;
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px 24px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+.device-main {
+    min-width: 180px;
+    padding-right: 32px;
+    border-right: 1px solid #e8e8e8;
+}
+
+.device-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.device-code {
+    font-size: 18px;
+    font-weight: 600;
+    color: #333;
+}
+
+.status-tag {
+    font-size: 12px;
+}
+
+.device-id {
+    font-size: 13px;
+    color: #999;
+}
+
+.device-detail {
+    display: flex;
+    align-items: flex-start;
+    padding: 0 32px;
+    border-right: 1px solid #e8e8e8;
+}
+
+.device-detail:last-child {
+    border-right: none;
+}
+
+.device-detail .el-icon {
+    font-size: 22px;
+    color: #e6a23c;
+    margin-right: 10px;
+    margin-top: 2px;
+}
+
+.detail-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.detail-label {
+    font-size: 12px;
+    color: #999;
+    margin-bottom: 4px;
+}
+
+.detail-value {
+    font-size: 14px;
+    color: #333;
 }
 
 /* 顶部账户信息栏 */

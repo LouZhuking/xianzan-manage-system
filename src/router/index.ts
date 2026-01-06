@@ -19,7 +19,6 @@ const routes: RouteRecordRaw[] = [
                 name: 'dashboard',
                 meta: {
                     title: '系统首页',
-                    noAuth: true,
                 },
                 component: () => import(/* webpackChunkName: "dashboard" */ '../views/dashboard.vue'),
             },
@@ -28,7 +27,6 @@ const routes: RouteRecordRaw[] = [
                 name: 'device-manage',
                 meta: {
                     title: '设备管理',
-                    noAuth: true,
                 },
                 component: () => import(/* webpackChunkName: "device-manage" */ '../views/business/device-manage.vue'),
             },
@@ -37,7 +35,6 @@ const routes: RouteRecordRaw[] = [
                 name: 'revenue-flow',
                 meta: {
                     title: '营收流水',
-                    noAuth: true,
                 },
                 component: () => import(/* webpackChunkName: "revenue-flow" */ '../views/business/revenue-flow.vue'),
             },
@@ -46,7 +43,6 @@ const routes: RouteRecordRaw[] = [
                 name: 'order-system',
                 meta: {
                     title: '订单系统',
-                    noAuth: true,
                 },
                 component: () => import(/* webpackChunkName: "order-system" */ '../views/business/order-system.vue'),
             },
@@ -303,7 +299,10 @@ router.beforeEach((to, from, next) => {
     const role = localStorage.getItem('vuems_name');
     const permiss = usePermissStore();
 
-    if (!role && to.meta.noAuth !== true) {
+    // 已登录用户访问登录页时，重定向到首页
+    if (role && to.path === '/login') {
+        next('/device-manage');
+    } else if (!role && to.meta.noAuth !== true) {
         next('/login');
     } else if (typeof to.meta.permiss == 'string' && !permiss.key.includes(to.meta.permiss)) {
         // 如果没有权限，则进入403
